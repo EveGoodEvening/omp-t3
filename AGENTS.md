@@ -24,3 +24,10 @@ For long-running delegated tasks, use T3's `delegate_task` MCP tool (target `pro
 
 - **Disallowed Models**: **GPT Sol**, **Opus**, or **GLM 5.3** are **strictly not allowed** to be used for subagents.
 - **Allowed Models**: Only **GLM 5.3 Flash**, **Gemini 3.8 Flash**, and **DeepSeek V4.1 Flash** are allowed to be used for subagents.
+
+## Lessons
+
+- Security audit (2026-11-04, HEAD `0549e5e`): all 16 files in the published `omp-t3@1.4.0-5` tarball matched the checkout, and its SHA-256 matched both Homebrew formulas. This verifies that artifact only, not future publishes or external OMP/T3 components. npm's `latest` was `1.3.0-4`; `beta` was `1.4.0-5`.
+- `ContractDoctor` enables automatic GitHub issue creation by default using existing `gh` authentication. Discovery error messages enter the issue body without redaction; truncation and the label "sanitized" do not establish privacy. Security reproductions must mock `gh` and use synthetic data.
+- Executable paths must be passed to `execFile`/`execFileSync` with argument arrays. Double-quoting a path inside `execSync` still permits shell command substitution; this was reproduced in model discovery with a harmless temporary marker.
+- Oh My Pi's npm package is `@oh-my-pi/pi-coding-agent`; the unscoped `omp` package is unrelated. The rollback guidance in `src/doctor.js` currently names the wrong package.
