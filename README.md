@@ -16,9 +16,85 @@ T3 Code includes a provider for upstream Pi. Pointing that provider directly at 
 
 ## Installation
 
+Requires Node.js **18 or newer**, npm, and a separately installed [Oh My Pi](https://github.com/can1357/oh-my-pi) (`omp` available on `PATH`). If installing OMP through npm, its package is `@oh-my-pi/pi-coding-agent`, not `omp`. Git is also required for cloning or Git URL installs. Installing this shim does not install OMP or T3 Code.
+
+For this fork, use a local checkout or its Git URL below. The npm registry package and Homebrew tap in the later sections are upstream distribution channels; they do **not** install this fork's unpublished changes. The executable and npm package name remain `omp-t3`, so use one global installation method at a time.
+
+### From a local path (fork checkout)
+
+Clone your fork, then install its checkout globally:
+
+```bash
+git clone https://github.com/EveGoodEvening/omp-t3.git
+cd omp-t3
+npm install -g .
+```
+
+For an existing checkout, install using its absolute path instead:
+
+```bash
+npm install -g /absolute/path/to/omp-t3
+```
+
+With npm's default local-folder behavior, this links the global package to the checkout: source edits take effect on the next launch. Keep the checkout at that path; moving or deleting it breaks the installation. No build step is required.
+
+You can also skip global installation and set T3's **Binary Path** directly to `/absolute/path/to/omp-t3/bin/omp-t3`. Keep **Arguments** blank. This also runs the checkout's current source and requires keeping that checkout in place.
+
+### From a Git URL (no persistent checkout)
+
+```bash
+npm install -g 'git+https://github.com/EveGoodEvening/omp-t3.git'
+```
+
+[npm 12 disables Git installs by default](https://docs.npmjs.com/cli/v12/using-npm/config#allow-git). If you get `EALLOWGIT`, explicitly allow Git for this command only, after confirming you trust the repository:
+
+```bash
+npm install -g --allow-git=all 'git+https://github.com/EveGoodEvening/omp-t3.git'
+```
+
+Use the same flag when installing a pinned ref or updating with npm 12. This does not change your global npm configuration; `all` allows Git dependencies for that invocation, so only use it for trusted sources.
+
+This installs a packaged copy from the fork's default branch, independent of any local checkout. To select a branch, tag, or full commit SHA, append `#<ref>` to the URL; replace `<ref>` before running:
+
+```bash
+npm install -g 'git+https://github.com/EveGoodEvening/omp-t3.git#<ref>'
+```
+
+Prefer a full commit SHA for reproducible deployments. Private repositories require Git credentials on the installation host; do not embed access tokens in the URL or shell history.
+
+After either global installation, check the executable and follow [Setup in T3 Code](#setup-in-t3-code):
+
+```bash
+command -v omp-t3
+omp-t3 --version
+omp-t3 --check
+```
+
+If `omp-t3` is not found, add `$(npm prefix -g)/bin` to `PATH` on Linux/macOS, or use that directory's absolute `omp-t3` path in T3. A desktop-launched T3 may not inherit your shell's `PATH`.
+
+### Updating or removing a fork installation
+
+For a linked local checkout (including a direct **Binary Path**), update the checkout on your chosen branch:
+
+```bash
+git -C /absolute/path/to/omp-t3 pull --ff-only
+```
+
+The current package has no dependencies or build step, so a linked checkout needs no reinstall after pulling. For a Git URL installation, rerun `npm install -g` with the **same fork URL**, optionally changing the pinned ref to the new commit. Restart the Pi provider/session after updating to load the new code, then refresh models and commands in T3.
+
+**Do not use `omp-t3 update --yes` or `npm update -g omp-t3` to maintain a fork.** The current self-update logic detects the installation location, not its Git origin. A Git URL install can be classified as `npm` and offered the upstream registry update command. `omp-t3 update` and T3's routine `update --self` are guidance-only and do not change the installation; their suggested command may still be inappropriate for a fork.
+
+Remove a global installation (local path or Git URL) with:
+
+```bash
+npm uninstall -g omp-t3
+```
+
+This removes the global package entry and command, not your local checkout. If T3 points directly to `bin/omp-t3`, change or clear its **Binary Path** before moving or deleting that checkout. Uninstalling the shim does not remove OMP, sessions, or shim caches.
+
 ### With npm
 
-Install globally using npm:
+Install the upstream registry package globally using npm:
 
 ```bash
 npm install -g omp-t3
@@ -26,7 +102,7 @@ npm install -g omp-t3
 
 ### With Homebrew
 
-Install from the tap:
+Install the upstream release from the tap:
 
 ```bash
 brew tap hashangit/omp-t3
@@ -41,7 +117,7 @@ brew install hashangit/omp-t3/omp-t3
 
 ### Run without installing
 
-You can test `omp-t3` directly through npx:
+You can test the upstream registry package directly through npx (this does not run your fork):
 
 ```bash
 npx omp-t3 --check
@@ -52,7 +128,7 @@ npx omp-t3 --check
 ## Setup in T3 Code
 
 1. Open **Settings** -> **Providers** -> **Pi**.
-2. Set **Binary Path** to `omp-t3` (or the full path from `which omp-t3`).
+2. Set **Binary Path** to the absolute path printed by `command -v omp-t3` for a global install, or `/absolute/path/to/omp-t3/bin/omp-t3` for a direct checkout. This avoids relying on the desktop app's `PATH`; make sure it is not pointing to an older installation.
 3. Leave **Arguments** blank. `omp-t3` defaults to `--mode rpc-ui` automatically.
 4. Click **Refresh** to populate your configured models.
 5. Select your model and send a message.
@@ -215,7 +291,8 @@ npm test
 ## Changelog
 
 **Availability note:** `1.5.2` is published to npm (earlier `1.5.0` and
-`1.4.0-x` iterations remain available as historical versions).
+`1.4.0-x` iterations remain available as historical versions). Changelog
+entries describe repository source, which may differ from published npm/Homebrew releases. To deploy this fork's source, use the [local-path](#from-a-local-path-fork-checkout) or [Git URL](#from-a-git-url-no-persistent-checkout) installation instructions rather than relying on upstream dist-tags.
 
 ### 1.5.2
 
@@ -228,6 +305,8 @@ npm test
 - **Install-channel detection fixed on macOS.** `detectInstallChannel` compared a realpath-resolved binary against raw prefix roots; macOS's `/var/folders` → `/private/var/folders` symlink misclassified brew/npm installs as `checkout`. Roots are now resolved best-effort.
 
 ### Unreleased
+
+- **Fork deployment documentation:** Added local-path and Git URL installation, ref pinning, T3 binary-path setup, manual fork updates, and uninstall instructions; documented the upstream self-update limitation.
 
 - **T3 discovery compatibility:** Consume Pi's `--offline` startup hint instead of passing an unsupported flag to OMP. Restores provider/workspace model and command discovery without disabling OMP skills or extensions; covers validated, stock, and validation-fallback launches.
 
