@@ -17,6 +17,7 @@ const fs = require('node:fs');
 const args = process.argv.slice(2);
 if (args.includes('--version')) { console.log('omp/18.12.6'); process.exit(0); }
 if (args[0] === 'models') { console.log('[]'); process.exit(0); }
+if (args.includes('--offline')) { console.error('Error: unknown flag: --offline'); process.exit(2); }
 fs.appendFileSync(process.env.LAUNCH_LOG, JSON.stringify(args)+'\\n');
 fs.appendFileSync(process.env.LAUNCH_LOG+'.pids',process.pid+'\\n');
 const idx=args.indexOf('--tools');
@@ -74,6 +75,18 @@ test('launcher prunes one rejected built-in and preserves user prompt on launch'
   assert.ok(final.some(a=>a.includes('USER RULE')));
   assert.doesNotMatch(result.stderr,/degraded/);
 });
+
+for (const [name, scenario, env] of [
+  ['validated tools', 'single', {}],
+  ['stock tools', 'single', { OMPT3_DELEGATE_TASKS: '0' }],
+  ['validation fallback', 'all', {}]
+]) {
+  test('T3 offline discovery reaches RPC readiness with ' + name, async t => {
+    const result = await runLauncher(t, scenario, ['--no-session', '--offline'], env);
+    assert.match(result.stdout, /"type":"ready"/, result.stderr);
+    assert.doesNotMatch(result.stderr, /unknown flag: --offline/);
+  });
+}
 
 test('launcher falls back to original user arguments when every built-in is rejected', async t=>{
   const result=await runLauncher(t,'all',['--append-system-prompt=USER RULE']);

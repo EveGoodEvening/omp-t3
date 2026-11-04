@@ -175,7 +175,7 @@ This policy covers tools in OMP sessions launched through this shim. It is not a
 
 ## CLI
 
-`omp-t3` handles four helper flags plus the `update` subcommand locally. It rewrites `--mode` to `rpc-ui`, applies [delegation enforcement](#delegation-enforcement) by default, and optionally adds the `OMPT3_MAX_SUBAGENTS` config overlay. Other arguments pass through to OMP:
+`omp-t3` handles four helper flags plus the `update` subcommand locally. It rewrites `--mode` to `rpc-ui`, consumes Pi's `--offline` startup hint, applies [delegation enforcement](#delegation-enforcement) by default, and optionally adds the `OMPT3_MAX_SUBAGENTS` config overlay. Other arguments pass through to OMP:
 
 | Command | Behavior |
 |---|---|
@@ -183,6 +183,14 @@ This policy covers tools in OMP sessions launched through this shim. It is not a
 | `omp-t3 --check` | Verifies `omp` is reachable, runs test model extraction, validates compatibility signals, and checks the session-directory link. |
 | `omp-t3 --setup-symlink` | Creates `~/.pi/agent/sessions` -> `~/.omp/agent/sessions` for T3 Code's historical usage dashboard. |
 | `omp-t3 --help` | Prints usage instructions and the T3 Code configuration guide. |
+
+### Models, skills, and extension commands fail to refresh
+
+T3 uses `--mode rpc --no-session --offline` for short-lived provider and workspace discovery. OMP 18.16.0 rejects Pi's `--offline` flag with exit code 2. Older shim versions forward it unchanged, so ordinary conversations can work while the provider page reports **"Pi is available, but T3 Code could not refresh its models and commands"** and the command/skill menus stay empty.
+
+The shim consumes this Pi-only hint before both validation and final launch. This is argument compatibility, **not an offline/network-isolation mode**: OMP keeps its normal startup behavior, including configured extensions and MCP servers. It does not disable skills or extensions to make discovery succeed.
+
+After installing the fix, refresh the Pi provider and start a new session to reload its resources. OMP skill commands appear in T3's `$` menu; extension slash commands appear in `/`. Terminal-only extension widgets and custom TUI components are not automatically reproduced by T3's web UI. A missing panel is not proof that its extension hooks failed to load.
 
 ## Provider errors & retries
 
@@ -218,6 +226,10 @@ npm test
 - **T3 Code v0.1.7 `--offline` discovery probes survive.** T3's Pi driver launches its short-lived discovery processes as `--mode rpc --no-session --offline`; omp exits on the unknown flag, so every probe died and T3 cached an empty catalog ("No skills found", empty `/` and `$` menus) while live chats kept working. The shim drops the flag (omp's RPC startup is already local for discovery) and passes `--no-session` through. Fresh base drop tracking pi (`@earendil-works/pi-coding-agent`) 1.5.0; T3's gate needs ≥ 0.80.5.
 - **Skills serve with real on-disk paths.** omp 18.16.0 pushes its full catalog (78 commands / 27 skills in the verification workspace) but answers `get_commands` polls empty — the shim's push-cache absorbs that drift — and its skill entries carry no location, leaving T3's `$name`/`@name` inlining against dangling `pi:skill:` strings. The shim now resolves every skill to its real `SKILL.md` across hierarchical roots (project `.agents/skills`/`.claude/skills` before the user home) and stamps `path` + `sourceInfo.{path, scope}` (project|user), preserved through the Pi projection along with `input.hint`.
 - **Install-channel detection fixed on macOS.** `detectInstallChannel` compared a realpath-resolved binary against raw prefix roots; macOS's `/var/folders` → `/private/var/folders` symlink misclassified brew/npm installs as `checkout`. Roots are now resolved best-effort.
+
+### Unreleased
+
+- **T3 discovery compatibility:** Consume Pi's `--offline` startup hint instead of passing an unsupported flag to OMP. Restores provider/workspace model and command discovery without disabling OMP skills or extensions; covers validated, stock, and validation-fallback launches.
 
 ### 1.4.0-5
 

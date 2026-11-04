@@ -96,7 +96,17 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
 
-    if (arg === '--mode') {
+    if (arg === '--offline') {
+      // T3 Code (Pi driver) adds --offline to short-lived launches: the
+      // provider-manifest discovery probe and per-workspace command discovery
+      // both spawn `--mode rpc --no-session --offline`. Stock Pi knows the
+      // flag (no provider connections); omp does not and exits on sight, so
+      // the probe dies before answering get_state/get_commands and T3 caches
+      // an empty skill/slash-command catalog ("No skills found"). omp's RPC
+      // startup is already local for discovery purposes, so consume the hint
+      // (without disabling OMP's skills or extensions) rather than forward it.
+      continue;
+    } else if (arg === '--mode') {
       const modeValue = argv[i + 1];
       modeFound = true;
       i++; // skip next arg
@@ -119,15 +129,6 @@ function parseArgs(argv) {
       } else {
         rewritten.push(arg);
       }
-    } else if (arg === '--offline') {
-      // T3 Code (Pi driver) adds --offline to short-lived launches: the
-      // provider-manifest discovery probe and per-workspace command discovery
-      // both spawn `--mode rpc --no-session --offline`. Stock Pi knows the
-      // flag (no provider connections); omp does not and exits on sight, so
-      // the probe dies before answering get_state/get_commands and T3 caches
-      // an empty skill/slash-command catalog ("No skills found"). omp's RPC
-      // startup is already local for discovery purposes, so the correct
-      // translation is to drop the flag rather than forward it.
     } else {
       rewritten.push(arg);
     }
