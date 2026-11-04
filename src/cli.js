@@ -96,7 +96,12 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
 
-    if (arg === '--mode') {
+    // T3 adds Pi's --offline startup hint to short-lived discovery probes.
+    // OMP has no equivalent CLI flag and rejects it before serving RPC.
+    // Consume the hint without disabling OMP's skills or extensions.
+    if (arg === '--offline') {
+      continue;
+    } else if (arg === '--mode') {
       const modeValue = argv[i + 1];
       modeFound = true;
       i++; // skip next arg

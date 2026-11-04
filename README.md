@@ -175,7 +175,7 @@ This policy covers tools in OMP sessions launched through this shim. It is not a
 
 ## CLI
 
-`omp-t3` handles four helper flags plus the `update` subcommand locally. It rewrites `--mode` to `rpc-ui`, applies [delegation enforcement](#delegation-enforcement) by default, and optionally adds the `OMPT3_MAX_SUBAGENTS` config overlay. Other arguments pass through to OMP:
+`omp-t3` handles four helper flags plus the `update` subcommand locally. It rewrites `--mode` to `rpc-ui`, consumes Pi's `--offline` startup hint, applies [delegation enforcement](#delegation-enforcement) by default, and optionally adds the `OMPT3_MAX_SUBAGENTS` config overlay. Other arguments pass through to OMP:
 
 | Command | Behavior |
 |---|---|
@@ -183,6 +183,14 @@ This policy covers tools in OMP sessions launched through this shim. It is not a
 | `omp-t3 --check` | Verifies `omp` is reachable, runs test model extraction, validates compatibility signals, and checks the session-directory link. |
 | `omp-t3 --setup-symlink` | Creates `~/.pi/agent/sessions` -> `~/.omp/agent/sessions` for T3 Code's historical usage dashboard. |
 | `omp-t3 --help` | Prints usage instructions and the T3 Code configuration guide. |
+
+### Models, skills, and extension commands fail to refresh
+
+T3 uses `--mode rpc --no-session --offline` for short-lived provider and workspace discovery. OMP 18.16.0 rejects Pi's `--offline` flag with exit code 2. Older shim versions forward it unchanged, so ordinary conversations can work while the provider page reports **"Pi is available, but T3 Code could not refresh its models and commands"** and the command/skill menus stay empty.
+
+The shim consumes this Pi-only hint before both validation and final launch. This is argument compatibility, **not an offline/network-isolation mode**: OMP keeps its normal startup behavior, including configured extensions and MCP servers. It does not disable skills or extensions to make discovery succeed.
+
+After installing the fix, refresh the Pi provider and start a new session to reload its resources. OMP skill commands appear in T3's `$` menu; extension slash commands appear in `/`. Terminal-only extension widgets and custom TUI components are not automatically reproduced by T3's web UI. A missing panel is not proof that its extension hooks failed to load.
 
 ## Provider errors & retries
 
@@ -207,6 +215,10 @@ npm test
 ## Changelog
 
 **Availability note:** the entries below describe the repository's current `main`. As of this writing, npm's dist-tags still serve `latest: 1.3.0-4` / `beta: 1.4.0` — the 1.4.0-x iterations are pending publish. Until they are published, install from a checkout of this repository (`npm install -g .`) or run `bin/omp-t3` directly.
+
+### Unreleased
+
+- **T3 discovery compatibility:** Consume Pi's `--offline` startup hint instead of passing an unsupported flag to OMP. Restores provider/workspace model and command discovery without disabling OMP skills or extensions; covers validated, stock, and validation-fallback launches.
 
 ### 1.4.0-5
 
