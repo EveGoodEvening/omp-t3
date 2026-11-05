@@ -9,8 +9,13 @@ const vm = require('node:vm');
 const { createSubagentPolicy, subagentPolicyArgs } = require('../src/subagent_policy.js');
 const { adaptT3ExtensionArgs, GET_COMMANDS_MARKER, MCP_CLIENT_MARKER } = require('../src/extension_compat.js');
 
-test('defaults allow only the three named Flash models, with provider-qualified catalog IDs', () => {
-  const policy = createSubagentPolicy({});
+const policyEnv = {
+  OMPT3_SUBAGENT_ALLOWED_MODELS: 'glm-5.3-flash,gemini-3.8-flash,deepseek-v4.1-flash',
+  OMPT3_SUBAGENT_DISALLOWED_MODELS: 'gpt-*sol*,*opus*,glm-5.3,glm-5.3:*'
+};
+
+test('explicit policy allows provider-qualified Flash models and rejects unlisted models', () => {
+  const policy = createSubagentPolicy(policyEnv);
   for (const model of ['glm-5.3-flash', 'openrouter/z-ai/glm-5.3-flash',
     'openrouter/google/gemini-3.8-flash', 'openrouter/deepseek/deepseek-v4.1-flash',
     'OPENROUTER/GOOGLE/GEMINI-3.8-FLASH']) {
@@ -26,7 +31,7 @@ test('defaults allow only the three named Flash models, with provider-qualified 
   }
 });
 
-test('each env list replaces its defaults, globs are anchored, and denial wins', () => {
+test('each env list is independent, globs are anchored, and denial wins', () => {
   const policy = createSubagentPolicy({
     OMPT3_SUBAGENT_ALLOWED_MODELS: ' openrouter/google/gemini-*, glm-5.3-flash , glm-5.3-flash ',
     OMPT3_SUBAGENT_DISALLOWED_MODELS: '*pro*,glm-5.3-flash'
@@ -36,12 +41,12 @@ test('each env list replaces its defaults, globs are anchored, and denial wins',
   for (const model of ['other/google/gemini-3.8-flash', 'openrouter/google/gemini-3.8-pro', 'glm-5.3-flash']) {
     assert.match(policy.checkModel(model), /rejected/);
   }
-  const denyOnly = createSubagentPolicy({ OMPT3_SUBAGENT_ALLOWED_MODELS: '' });
+  const denyOnly = createSubagentPolicy({ OMPT3_SUBAGENT_DISALLOWED_MODELS: policyEnv.OMPT3_SUBAGENT_DISALLOWED_MODELS });
   assert.equal(denyOnly.checkModel('new-model'), null);
   assert.match(denyOnly.checkModel('gpt-6.1-sol'), /rejected/);
   assert.match(denyOnly.checkModel('glm-5.3:batch'), /rejected/);
   assert.match(denyOnly.checkModel(null), /inheritance is blocked/);
-  const allowOnly = createSubagentPolicy({ OMPT3_SUBAGENT_DISALLOWED_MODELS: '' });
+  const allowOnly = createSubagentPolicy({ OMPT3_SUBAGENT_ALLOWED_MODELS: policyEnv.OMPT3_SUBAGENT_ALLOWED_MODELS });
   assert.match(allowOnly.checkModel('new-model'), /rejected/);
   const off = createSubagentPolicy({ OMPT3_SUBAGENT_ALLOWED_MODELS: '', OMPT3_SUBAGENT_DISALLOWED_MODELS: '' });
   assert.equal(off.active, false);
@@ -49,6 +54,15 @@ test('each env list replaces its defaults, globs are anchored, and denial wins',
   assert.equal(off.checkTool('delegate_task', {}), null);
   assert.equal(off.prompt, '');
   assert.deepEqual(subagentPolicyArgs(off), []);
+});
+
+test('unset model lists do not block native tasks or delegation', () => {
+  const policy = createSubagentPolicy({});
+  for (const model of [undefined, 'gpt-6.1-sol', 'claude-opus', 'custom-model']) {
+    assert.equal(policy.checkTool('delegate_task', { target: { model } }), null);
+  }
+  assert.equal(policy.checkTool('task', {}), null);
+  assert.equal(policy.active, false);
 });
 
 test('patterns escape regex punctuation and malformed lists fail instead of disabling restrictions', () => {
@@ -62,7 +76,7 @@ test('patterns escape regex punctuation and malformed lists fail instead of disa
 });
 
 test('tool guard checks both T3 aliases, blocks native inheritance, and leaves ordinary tools alone', () => {
-  const policy = createSubagentPolicy({});
+  const policy = createSubagentPolicy(policyEnv);
   for (const name of ['delegate_task', 'mcp__t3-code__delegate_task', 'mcp__t3_code__delegate_task']) {
     assert.match(policy.checkTool(name, {}), /target.model explicitly/);
     assert.match(policy.checkTool(name, { target: { model: 'gpt-6.1-sol' } }), /rejected/);
@@ -79,17 +93,17 @@ test('generated extension registers a blocking OMP hook and reads each session e
   const previous = process.env.XDG_CACHE_HOME;
   process.env.XDG_CACHE_HOME = dir;
   try {
-    const args = subagentPolicyArgs(createSubagentPolicy({}));
+    const args = subagentPolicyArgs(createSubagentPolicy(policyEnv));
     const source = fs.readFileSync(args[1], 'utf8');
     const mtime = fs.statSync(args[1]).mtimeMs;
-    subagentPolicyArgs(createSubagentPolicy({}));
+    subagentPolicyArgs(createSubagentPolicy(policyEnv));
     assert.equal(fs.statSync(args[1]).mtimeMs, mtime);
-    for (const env of [{}, { OMPT3_SUBAGENT_ALLOWED_MODELS: 'custom-model', OMPT3_SUBAGENT_DISALLOWED_MODELS: '' }]) {
+    for (const env of [policyEnv, { OMPT3_SUBAGENT_ALLOWED_MODELS: 'custom-model', OMPT3_SUBAGENT_DISALLOWED_MODELS: '' }]) {
       let hook;
       const context = { process: { env }, pi: { on: (name, fn) => { assert.equal(name, 'tool_call'); hook = fn; } } };
       vm.runInNewContext(source.replace('export default function', 'function') + '\nompT3SubagentPolicy(pi);', context);
       assert.equal(hook({ toolName: 'task', input: {} }).block, true);
-      const model = env.OMPT3_SUBAGENT_ALLOWED_MODELS || 'glm-5.3-flash';
+      const model = env === policyEnv ? 'glm-5.3-flash' : 'custom-model';
       assert.equal(hook({ toolName: 'mcp__t3_code__delegate_task', input: { target: { model } } }), undefined);
       assert.match(hook({ toolName: 'mcp__t3-code__delegate_task', input: {} }).reason, /target.model/);
     }
@@ -122,12 +136,12 @@ test('adapted bridge rejects before the MCP call and preserves allowed targets a
   const cachePath = path.join(dir, 'compat.ts');
   fs.writeFileSync(original, bridgeFixture());
   for (const flags of [['--extension', original], ['-e', original], ['--extension=' + original], ['--hook', original], ['--hook=' + original]]) {
-    const adapted = await adaptT3ExtensionArgs(flags, { cachePath, policy: createSubagentPolicy({}) });
+    const adapted = await adaptT3ExtensionArgs(flags, { cachePath, policy: createSubagentPolicy(policyEnv) });
     assert.equal(adapted.extensionPath, cachePath);
     assert.ok(adapted.args.some(arg => arg.endsWith(cachePath)));
   }
   const calls = [];
-  const client = await vm.runInNewContext(fs.readFileSync(cachePath, 'utf8'), { process: { env: {} }, calls });
+  const client = await vm.runInNewContext(fs.readFileSync(cachePath, 'utf8'), { process: { env: policyEnv }, calls });
   for (const params of [{}, { target: {} }, { target: { model: null } }, { target: { model: 'glm-5.3' } }, { target: { model: 'claude-opus' } }]) {
     const result = await client.callTool('delegate_task', params);
     assert.equal(result.isError, true);
@@ -149,7 +163,7 @@ test('enforcement refuses drift, unreadable source and an unwritable cache; skil
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ompt3-policy-drift-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const original = path.join(dir, 'pi-t3-mcp-extension.ts');
-  const options = { cachePath: path.join(dir, 'compat.ts'), policy: createSubagentPolicy({}), log: () => {} };
+  const options = { cachePath: path.join(dir, 'compat.ts'), policy: createSubagentPolicy(policyEnv), log: () => {} };
   await assert.rejects(adaptT3ExtensionArgs(['--extension', original], options), /cannot read T3 extension/);
   for (const source of [GET_COMMANDS_MARKER, MCP_CLIENT_MARKER + MCP_CLIENT_MARKER]) {
     fs.writeFileSync(original, source);

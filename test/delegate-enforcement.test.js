@@ -5,6 +5,10 @@ const assert = require('node:assert/strict');
 
 const { parseArgs } = require('../src/cli.js');
 
+// These scenarios exercise explicitly enabled model restrictions.
+process.env.OMPT3_SUBAGENT_ALLOWED_MODELS = 'glm-5.3-flash';
+process.env.OMPT3_SUBAGENT_DISALLOWED_MODELS = 'gpt-*sol*,*opus*';
+
 // --- Delegation enforcement (default on; OMPT3_DELEGATE_TASKS=0 opts out) ---
 
 test('enforcement: default launch injects the task-free tools list and the policy', () => {
