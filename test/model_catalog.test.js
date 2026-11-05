@@ -123,6 +123,43 @@ test('ModelCatalogManager intercepts get_available_models frame', () => {
   assert.equal(parsed.models[0].name, 'GLM 5.3 Flash');
 });
 
+test('ModelCatalogManager executes model discovery paths literally', { skip: process.platform === 'win32' }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-t3-literal-path-'));
+  const originalCache = process.env.XDG_CACHE_HOME;
+  const originalMarker = process.env.OMPT3_TEST_INJECTION_MARKER;
+  const marker = path.join(dir, 'shell-ran');
+  process.env.XDG_CACHE_HOME = path.join(dir, 'cache');
+  process.env.OMPT3_TEST_INJECTION_MARKER = marker;
+  try {
+    const names = [
+      'fake omp with spaces',
+      'fake-omp-$(touch "$OMPT3_TEST_INJECTION_MARKER")',
+      'fake-omp-`touch "$OMPT3_TEST_INJECTION_MARKER"`',
+      'fake-omp-"quoted"'
+    ];
+    for (const name of names) {
+      const fakeOmp = path.join(dir, name);
+      fs.writeFileSync(fakeOmp, '#!/bin/sh\n' +
+        '[ "$#" -eq 2 ] && [ "$1" = models ] && [ "$2" = --json ] || exit 2\n' +
+        'echo \'{"models":[{"provider":"fixture","id":"literal-path","name":"Literal path"}]}\'\n');
+      fs.chmodSync(fakeOmp, 0o755);
+      const errors = [];
+      const manager = new ModelCatalogManager((err) => errors.push(err));
+      const models = manager.getModels(fakeOmp);
+      assert.equal(fs.existsSync(marker), false, `must not execute shell syntax in ${name}`);
+      assert.equal(manager.servingStale, false, `must run the literal executable at ${name}`);
+      assert.deepEqual(errors, []);
+      assert.deepEqual(models, [{ provider: 'fixture', id: 'literal-path', name: 'Literal path' }]);
+    }
+  } finally {
+    if (originalCache === undefined) delete process.env.XDG_CACHE_HOME;
+    else process.env.XDG_CACHE_HOME = originalCache;
+    if (originalMarker === undefined) delete process.env.OMPT3_TEST_INJECTION_MARKER;
+    else process.env.OMPT3_TEST_INJECTION_MARKER = originalMarker;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('ModelCatalogManager persists discovered models and falls back to them on failure', () => {
   const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-t3-models-'));
   const original = process.env.XDG_CACHE_HOME;

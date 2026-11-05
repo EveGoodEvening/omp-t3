@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execSync } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
 
 function modelsPersistPath() {
   const cacheDir = process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache');
@@ -133,7 +133,7 @@ class ModelCatalogManager {
     }
 
     try {
-      const output = execSync(`"${ompPath}" models --json`, {
+      const output = execFileSync(ompPath, ['models', '--json'], {
         encoding: 'utf8',
         maxBuffer: 10 * 1024 * 1024,
         timeout: 8000,
