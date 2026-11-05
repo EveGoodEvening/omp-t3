@@ -17,11 +17,12 @@ function createSubagentPolicy(env = process.env) {
     }
     return [...new Set(values)];
   };
+  // Opt-in only: former built-in lists remain as examples, not active policy.
   const allowed = read('OMPT3_SUBAGENT_ALLOWED_MODELS', [
-    'glm-5.3-flash', 'gemini-3.8-flash', 'deepseek-v4.1-flash'
+    // 'glm-5.3-flash', 'gemini-3.8-flash', 'deepseek-v4.1-flash'
   ]);
   const disallowed = read('OMPT3_SUBAGENT_DISALLOWED_MODELS', [
-    'gpt-*sol*', '*opus*', 'glm-5.3', 'glm-5.3:*'
+    // 'gpt-*sol*', '*opus*', 'glm-5.3', 'glm-5.3:*'
   ]);
   const active = allowed.length > 0 || disallowed.length > 0;
   const compile = pattern => {

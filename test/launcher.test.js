@@ -40,6 +40,7 @@ setInterval(()=>{},1000);
   const child = spawn(process.execPath, [path.resolve('bin/omp-t3'), '--mode', 'rpc', ...args], {
     detached: true,
     env: {...process.env, OMP_PATH: fake, OMPT3_DELEGATE_TASKS: '1', OMPT3_MAX_SUBAGENTS:'',
+      OMPT3_SUBAGENT_ALLOWED_MODELS:'glm-5.3-flash', OMPT3_SUBAGENT_DISALLOWED_MODELS:'gpt-*sol*,*opus*',
       LAUNCH_LOG:log, SCENARIO:scenario, ...env},
     stdio: ['pipe','pipe','pipe']
   });
@@ -186,4 +187,12 @@ test('clearing both lists and routing opt-out restores stock launch behavior', a
  });
  assert.equal(result.launches.length,1);
  assert.deepEqual(result.launches[0],['--mode','rpc-ui','--append-system-prompt','USER RULE']);
+});
+
+test('unset model lists restore stock native tasks when routing is disabled', async t => {
+ const result=await runLauncher(t,'single',['--tools=task'],{
+   OMPT3_DELEGATE_TASKS:'0', OMPT3_SUBAGENT_ALLOWED_MODELS:undefined, OMPT3_SUBAGENT_DISALLOWED_MODELS:undefined
+ });
+ assert.match(result.stdout,/"type":"ready"/);
+ assert.deepEqual(result.launches,[['--mode','rpc-ui','--tools=task']]);
 });

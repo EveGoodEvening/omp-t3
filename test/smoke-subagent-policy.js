@@ -11,6 +11,10 @@ const { spawn } = require('node:child_process');
 const { parseArgs, resolveOmpPath } = require('../src/cli');
 const { adaptT3ExtensionArgs, GET_COMMANDS_MARKER, GET_COMMANDS_REPLACEMENT } = require('../src/extension_compat');
 
+// Exercise opt-in enforcement rather than relying on built-in defaults.
+process.env.OMPT3_SUBAGENT_ALLOWED_MODELS = 'glm-5.3-flash';
+process.env.OMPT3_SUBAGENT_DISALLOWED_MODELS = 'gpt-*sol*,*opus*,glm-5.3';
+
 async function main() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ompt3-policy-smoke-'));
   const calls = [];

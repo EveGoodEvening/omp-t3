@@ -62,14 +62,12 @@ Environment:
                            queue; the lead agent is told the limit). Unset or
                            invalid = no change to the launch.
   OMPT3_SUBAGENT_ALLOWED_MODELS     Comma-separated model IDs or * patterns.
-                                    Defaults: glm-5.3-flash, gemini-3.8-flash,
-                                    deepseek-v4.1-flash.
-  OMPT3_SUBAGENT_DISALLOWED_MODELS  Deny rules win. Defaults: gpt-*sol*,
-                                    *opus*, glm-5.3, glm-5.3:*.
-  Empty values clear each list. Set BOTH lists empty to disable the model
-  policy. Otherwise target.model is required and native task is blocked.
+                                    Default: empty (no allowlist).
+  OMPT3_SUBAGENT_DISALLOWED_MODELS  Deny rules win. Default: empty (no denylist).
+  Model restrictions are opt-in: either nonempty list enables the policy,
+  requires target.model, and blocks native task. Empty/unset lists disable it.
 
-Explicit --tools lists override tool-list injection. Model restrictions remain active.
+Explicit --tools lists override tool-list injection. Opt-in model restrictions still apply.
 Other flags (e.g. --session, --fork, --hide-thinking) are forwarded to omp.
 When --mode rpc is received from T3 Code, it is automatically rewritten to --mode rpc-ui.
 `);
