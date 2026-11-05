@@ -85,6 +85,7 @@ test('ContractDoctor reports drift with rollback guidance and rate-limits', () =
     assert.ok(text.includes('contract changed'), 'must tell the user the contract changed');
     assert.ok(text.includes('18.11.3'), 'must include the last known good version');
     assert.match(text, /roll back/i, 'must include rollback guidance');
+    assert.match(text, /npm install -g @oh-my-pi\/pi-coding-agent@18\.11\.3\b/, 'must pin the OMP package to the last known good version');
     assert.ok(text.includes('hashangit/omp-t3'), 'must reference the issue tracker');
     // Rate limit: second identical report within a day only writes once extra... verify via state
     assert.ok(Object.keys(doctor.state.issuesFiled).includes('settle-missing:18.12.0'));

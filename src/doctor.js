@@ -184,7 +184,7 @@ class ContractDoctor {
         ? `  Last known good: omp/${lastGood.ompVersion} with omp-t3 shim ${lastGood.shimVersion || '?'}, recorded ${new Date(lastGood.at).toISOString()}`
         : '  Last known good: none recorded yet',
       rolledBackFrom
-        ? `  ROLL BACK OMP to the previously working version: npm install -g omp@${rolledBackFrom} (or brew/pip equivalent you installed it with)`
+        ? `  ROLL BACK OMP to the previously working version: npm install -g @oh-my-pi/pi-coding-agent@${rolledBackFrom} (or use the package manager you originally installed OMP with)`
         : '  Roll back the side that changed to your previously installed version.',
       '  An issue with diagnostics will be filed at https://github.com/' + ISSUE_REPO + '/issues (once per day per drift).',
       '============================================================'
