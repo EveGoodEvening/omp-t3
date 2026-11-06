@@ -54,16 +54,18 @@ previously passed only because `realpathSync` no-oped on a missing file.
 
 ## Verification
 
-- 202/202 tests (6 new pins: `--offline` translation, T3 discovery-sequence
-  launch shape, skill path resolution/enrichment, projection field
-  preservation, realpath-symmetric channel detection, unresolvable-prefix
-  fallback).
+- 202/202 tests — 6 new pins (`--offline` translation, T3 discovery-sequence
+  launch shape, skill path resolution ×2, push-cache enrichment/projection
+  field preservation, unresolvable-prefix fallback) plus one strengthened
+  fixture: the npm channel test now creates its file, exercising the
+  realpath-symmetric root comparison it previously passed only vacuously.
 - Live wire runs against omp 18.16.0 through `bin/omp-t3`, replaying T3
   v0.1.7's exact discovery sequence (`--mode rpc --no-session --offline`):
   `ready`, `get_state`, 760 models fresh, `get_commands` → 78 commands /
   27 skills — 26 project-scoped plus 1 user-scoped, every skill carrying its
-  real `SKILL.md` path; identical results from a cold isolated
-  `PI_CODING_AGENT_DIR`.
+  real `SKILL.md` path; the identical command catalog (78/27 with real
+  paths) is also served from a cold isolated `PI_CODING_AGENT_DIR` (which
+  naturally resolves only its own on-device model list).
 - `omp-t3 --version` reports the pi base `1.5.0` on line 1 (T3's provider
   gate token) and `omp-t3 1.5.0 (Pi-compatible shim)` on line 2;
   `omp-t3 --check` passes.
@@ -73,6 +75,6 @@ previously passed only because `realpathSync` no-oped on a missing file.
 - OMP 18.16.0's empty `get_commands` poll answer is upstream contract drift;
   the push-cache absorbs it today, and `src/doctor.js` could pin the drift
   explicitly later if it widens.
-- `Formula/omp-t3.rb` still targets the published `1.4.0-5` npm tarball; it
-  is retargeted (with the published tarball's sha256) after `1.5.0` ships to
-  npm, per the existing release flow.
+- `Formula/omp-t3.rb` is retargeted to the published `1.5.0` npm tarball
+  (with its sha256) as the final step of this release flow, per the
+  established pattern.
