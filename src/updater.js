@@ -72,10 +72,22 @@ function detectInstallChannel(options = {}) {
 
   let npmRoot = options.npmGlobalRoot !== undefined ? options.npmGlobalRoot : null;
   const isUnder = (prefix) => prefix && (real === prefix || real.startsWith(prefix + path.sep));
+  // `real` is realpath-resolved, so the roots must be resolved too — on macOS
+  // os.tmpdir() (/var/folders/…) is a symlink to /private/var/folders/…, and
+  // comparing a resolved path against a raw root misclassifies a real brew/npm
+  // install as a checkout. Resolve best-effort: a root that does not exist
+  // (env var pointing nowhere) keeps its literal form.
+  const resolveRoot = (p) => {
+    try {
+      return fs.realpathSync(p);
+    } catch {
+      return p;
+    }
+  };
   const brewPrefixes = [
     process.env.HOMEBREW_PREFIX,
     ...BREW_PREFIXES
-  ].filter(Boolean).map((p) => p.replace(/[\\/]+$/, ''));
+  ].filter(Boolean).map((p) => resolveRoot(p.replace(/[\\/]+$/, '')));
 
   // Homebrew first: its cellars never overlap npm's global root, and this
   // avoids a pointless `npm root -g` subprocess for brew installs.
@@ -83,7 +95,7 @@ function detectInstallChannel(options = {}) {
   if (brewRoot) return { channel: 'homebrew', realpath: real, npmGlobalRoot: null };
 
   if (npmRoot === null) npmRoot = npmGlobalRoot();
-  if (npmRoot && isUnder(npmRoot)) return { channel: 'npm', realpath: real, npmGlobalRoot: npmRoot };
+  if (npmRoot && isUnder(resolveRoot(npmRoot))) return { channel: 'npm', realpath: real, npmGlobalRoot: npmRoot };
 
   return { channel: 'checkout', realpath: real, npmGlobalRoot: npmRoot };
 }

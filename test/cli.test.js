@@ -34,6 +34,24 @@ test('parseArgs preserves custom flags and ordering', () => {
   assert.deepEqual(result.ompArgs, ['--session', 'xyz', '--mode', 'rpc-ui', '--fork', 'prev-1']);
 });
 
+// T3 Code's Pi driver launches its short-lived discovery probes as
+// `--mode rpc --no-session --offline`. omp has no --offline flag and exits
+// on sight, which starves T3's provider manifest of commands and skills
+// ("No skills found" in the $ menu). The shim must drop the flag while
+// keeping everything else T3 passes.
+test('parseArgs drops the T3 discovery --offline flag omp rejects', () => {
+  const result = parseArgs(['--mode', 'rpc', '--no-session', '--offline']);
+  assert.equal(result.action, 'proxy');
+  assert.deepEqual(result.ompArgs, ['--mode', 'rpc-ui', '--no-session']);
+  assert.deepEqual(result.delegation.fallbackArgs, ['--mode', 'rpc-ui', '--no-session']);
+});
+
+test('parseArgs keeps --no-session when dropping --offline (discovery launch parity)', () => {
+  const result = parseArgs(['--mode', 'rpc', '--no-session']);
+  assert.equal(result.action, 'proxy');
+  assert.deepEqual(result.ompArgs, ['--mode', 'rpc-ui', '--no-session']);
+});
+
 test('parseArgs detects helper flags', () => {
   assert.equal(parseArgs(['--version']).action, 'version');
   assert.equal(parseArgs(['-v']).action, 'version');

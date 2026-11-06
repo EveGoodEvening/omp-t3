@@ -19,9 +19,34 @@ test('US8: checkout installs are guidance-only, never an error', () => {
 
 test('US8: npm-global installs detect the npm channel', () => {
   const npmBin = path.join(NPM_ROOT, 'omp-t3', 'bin', 'omp-t3.js');
+  // Create the fixture file: with it present, execPath realpath-resolves
+  // (macOS /var/folders -> /private/var/folders), so this pins the resolved-
+  // root comparison in detectInstallChannel. Without the file, realpathSync
+  // no-ops and the test cannot tell raw-vs-resolved roots apart.
+  fs.mkdirSync(path.dirname(npmBin), { recursive: true });
+  fs.writeFileSync(npmBin, '// fake\n');
   const info = detectInstallChannel({ execPath: npmBin, npmGlobalRoot: NPM_ROOT });
   assert.equal(info.channel, 'npm');
   assert.equal(channelUpdateCommand('npm'), 'npm update -g omp-t3');
+});
+
+test('US8: an unresolvable $HOMEBREW_PREFIX still matches literal paths', () => {
+  // Env var pointing at a path that does not exist: realpath resolution must
+  // fall back to the literal string, not throw the prefix away.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ompt3-updater-'));
+  const target = path.join(dir, 'bin', 'omp-t3.js');
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, '// fake\n');
+  const original = process.env.HOMEBREW_PREFIX;
+  process.env.HOMEBREW_PREFIX = path.join(dir, 'nonexistent-prefix');
+  try {
+    const info = detectInstallChannel({ execPath: target, npmGlobalRoot: null });
+    assert.equal(info.channel, 'checkout');
+  } finally {
+    if (original === undefined) delete process.env.HOMEBREW_PREFIX;
+    else process.env.HOMEBREW_PREFIX = original;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('US8: homebrew installs detect the brew channel without consulting npm', () => {
