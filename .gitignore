@@ -22,5 +22,6 @@ build/
 .codex
 .cursor
 .gemini
-.github
+.Github
 .opencode
+.agents/
