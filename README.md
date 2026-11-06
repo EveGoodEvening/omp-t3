@@ -206,7 +206,15 @@ npm test
 
 ## Changelog
 
-**Availability note:** the entries below describe the repository's current `main`. As of this writing, npm's dist-tags still serve `latest: 1.3.0-4` / `beta: 1.4.0` — the 1.4.0-x iterations are pending publish. Until they are published, install from a checkout of this repository (`npm install -g .`) or run `bin/omp-t3` directly.
+**Availability note:** `1.5.0` is published to npm as `latest` (the plain
+semver fresh-base form; earlier `1.4.0-x` iterations remain available as
+historical versions).
+
+### 1.5.0
+
+- **T3 Code v0.1.7 `--offline` discovery probes survive.** T3's Pi driver launches its short-lived discovery processes as `--mode rpc --no-session --offline`; omp exits on the unknown flag, so every probe died and T3 cached an empty catalog ("No skills found", empty `/` and `$` menus) while live chats kept working. The shim drops the flag (omp's RPC startup is already local for discovery) and passes `--no-session` through. Fresh base drop tracking pi (`@earendil-works/pi-coding-agent`) 1.5.0; T3's gate needs ≥ 0.80.5.
+- **Skills serve with real on-disk paths.** omp 18.16.0 pushes its full catalog (78 commands / 27 skills in the verification workspace) but answers `get_commands` polls empty — the shim's push-cache absorbs that drift — and its skill entries carry no location, leaving T3's `$name`/`@name` inlining against dangling `pi:skill:` strings. The shim now resolves every skill to its real `SKILL.md` across hierarchical roots (project `.agents/skills`/`.claude/skills` before the user home) and stamps `path` + `sourceInfo.{path, scope}` (project|user), preserved through the Pi projection along with `input.hint`.
+- **Install-channel detection fixed on macOS.** `detectInstallChannel` compared a realpath-resolved binary against raw prefix roots; macOS's `/var/folders` → `/private/var/folders` symlink misclassified brew/npm installs as `checkout`. Roots are now resolved best-effort.
 
 ### 1.4.0-5
 
