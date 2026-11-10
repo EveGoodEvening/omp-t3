@@ -206,9 +206,12 @@ npm test
 
 ## Changelog
 
-**Availability note:** `1.5.0` is published to npm as `latest` (the plain
-semver fresh-base form; earlier `1.4.0-x` iterations remain available as
-historical versions).
+**Availability note:** `1.5.2` is published to npm (earlier `1.5.0` and
+`1.4.0-x` iterations remain available as historical versions).
+
+### 1.5.2
+
+- **Track upstream Pi release 1.5.2.** Bump base version to 1.5.2 to match `@earendil-works/pi-coding-agent` 1.5.2 release and satisfy T3 Code provider version advisory checks.
 
 ### 1.5.0
 

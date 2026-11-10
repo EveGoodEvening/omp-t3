@@ -23,5 +23,6 @@ build/
 .cursor
 .gemini
 .Github
+.commandcode
 .opencode
 .agents/
