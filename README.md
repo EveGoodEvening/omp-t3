@@ -310,8 +310,6 @@ entries describe repository source, which may differ from published npm/Homebrew
 
 - **Fork deployment documentation:** Added local-path and Git URL installation, ref pinning, T3 binary-path setup, manual fork updates, and uninstall instructions; documented the upstream self-update limitation.
 
-- **T3 discovery compatibility:** Consume Pi's `--offline` startup hint instead of passing an unsupported flag to OMP. Restores provider/workspace model and command discovery without disabling OMP skills or extensions; covers validated, stock, and validation-fallback launches.
-
 ### 1.4.0-5
 
 - **Subagent model restrictions.** Enforces configurable allowlists (`OMPT3_SUBAGENT_ALLOWED_MODELS`) and denylists (`OMPT3_SUBAGENT_DISALLOWED_MODELS`) for subagents launched in OMP sessions, defaulting to AGENTS.md policy: allowed models are `glm-5.3-flash`, `gemini-3.8-flash`, and `deepseek-v4.1-flash`; denied models are `gpt-*sol*`, `*opus*`, `glm-5.3`, and `glm-5.3:*`.
