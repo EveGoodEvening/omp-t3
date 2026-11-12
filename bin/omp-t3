@@ -2,7 +2,7 @@
 'use strict';
 
 const { parseArgs, resolveOmpPath, shimVersionInfo } = require('../src/cli.js');
-const { execSync, spawn } = require('node:child_process');
+const { execFileSync, spawn } = require('node:child_process');
 const { spawnAndProxy } = require('../src/proxy.js');
 const { adaptT3ExtensionArgs, readDeferralLedger } = require('../src/extension_compat.js');
 const { setupSessionSymlink } = require('../src/symlink.js');
@@ -101,7 +101,8 @@ When --mode rpc is received from T3 Code, it is automatically rewritten to --mod
     let ompPath = null;
     try {
       ompPath = resolveOmpPath();
-      const ompVer = execSync(`"${ompPath}" --version`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+      // Pass the path as argv, never through a shell: quoting does not stop $(...) or backticks.
+      const ompVer = execFileSync(ompPath, ['--version'], { encoding: 'utf8', timeout: 4000, stdio: ['pipe', 'pipe', 'ignore'] }).trim();
       console.log(`[PASS] OMP binary found at: ${ompPath} (${ompVer})`);
     } catch (err) {
       console.error(`[FAIL] Could not locate omp binary: ${err.message}`);
