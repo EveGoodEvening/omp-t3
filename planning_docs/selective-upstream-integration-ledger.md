@@ -12,7 +12,7 @@
 
 ## Acceptance criteria
 
-All AC1–6 are verified; all plan sections remain firm and independently reviewed, including D16. All 26 work items are done. W26's final whole-change/ownership review converges with zero Fix/Replan/reopened Discards; post-W25 full tests pass 436/436 and actual isolated diagnostic passes. No blocker, deferral or open decision remains. D27 authorizes the green checkpoint and final ledger delivery.
+All AC1–6 are verified; all plan sections remain firm and independently reviewed, including D16. All 26 work items are done. W26 final review converges with zero Fix/Replan/reopened Discards; post-W25 full tests pass 436/436 and actual isolated diagnostic passes. No blocker, deferral or open decision remains. Catalog checkpoint `eac8480` and joint checkpoint `6e61d57` are committed; final ledger delivery is recorded in D28.
 
 1. Running-session `get_available_models` responses are pruned for T3 with available request ID types preserved; standalone `--check` honors its process cwd/environment and resolved binary (no new overlay/profile CLI syntax). No persisted or fabricated catalog is served. Empty live lists succeed; empty standalone discovery fails. Malformed entries produce a correlated error without killing the proxy. Enforce the 1 MiB UTF-8 output-frame ceiling including newline and both list fields; upstream protocol-1 overflow errors pass through without invented IDs or fallback.
 2. Map advertised CLI arrays and live RPC `thinking.efforts` to all seven recognized effort keys, including advertised `xhigh`/`max`; every absent/unknown effort is explicitly null. Unknown/boolean/budget-only capabilities get a complete all-null map, preventing T3's lower-level default ladder. Preserve reasoning and caller/role thinking options separately.
@@ -30,7 +30,7 @@ All AC1–6 are verified; all plan sections remain firm and independently review
 | 3 | Stop original-scope protocol/owner round-three PASSes, W25 completed-child-witness 33/33 and final full gate; available-text/loss/correlation/consumer/real-Writable/direct-process proof retained. [W26 final PASS](selective-upstream-final-whole-review.md) independently closes GF1 with every process assertion retained. |
 | 4 | Routing round-two PASS, all routing/policy/tools matrices and real-entrypoint status/ack/channel cases; W24 unchanged generated source passes gated installed OMP 18.20 loader/runner/SessionTools proof. Stable-boundary/API limits and structural-host/injected-tree scope remain explicit. |
 | 5 | Final compatibility/defaults/skills/offline/shell/ownership tests, routing and whole-change round-two reviews, README/Unreleased and repository Lessons. No package/version/upstream destination or external plugin/system change adopted. |
-| 6 | Post-W25 full npm test 436/436 and actual isolated diagnostic pass, zero failures/skips/cancellations (artifact://42); no applicable build/typecheck/lint script. [Final whole-change/ownership PASS](selective-upstream-final-whole-review.md) converges with zero Fix/Replan/reopened Discards. Delivery D27. |
+| 6 | Post-W25 full npm test 436/436 and actual isolated diagnostic pass, zero failures/skips/cancellations (artifact://42); no applicable build/typecheck/lint script. Final whole-change/ownership PASS converges with zero Fix/Replan/reopened Discards. Joint green checkpoint `6e61d57`; final ledger delivery D28. |
 
 ## Plan
 
@@ -271,6 +271,12 @@ All AC1–6 are verified; all plan sections remain firm and independently review
 
 > None. W01–W26 are all done; no blocker or deferral.
 
+### D28 — Green checkpoint recorded; final ledger delivery
+
+- Evidence: owned joint implementation/evidence/ledger commit `6e61d57` (`feat(rpc): integrate atomic Stop and live-tool routing`) succeeds; earlier catalog checkpoint is `eac8480`. The final behavioral tree is the one verified by W12 and W26. No source/test behavior changed afterward.
+- Choice: the D06/D16 design-freeze condition ends at green joint checkpoint `6e61d57`; no plan content or accepted boundary changes. All W01–W26 remain done, all AC verified, no open Fix/Replan or decision, no unknown-until section, blocker, deferral or unfinished work item.
+- Delivery: commit this final ledger-only record locally using Conventional Commits. No push, deployment, external system change, further implementation, audit or duplicate suite. Final gate remains PASS; unfinished work items: none.
+
 ## Findings and open questions
 | ID | Triage | Status | Finding / reason |
 | --- | --- | --- | --- |
@@ -343,3 +349,4 @@ All AC1–6 are verified; all plan sections remain firm and independently review
 - I35 — Evaluate W25: completed actual-child acceptance IPC replaces existence polling for all nine fault modes, production unchanged, owner 33/33 and controlled causal proof pass. Choose W26 final original-scope/whole-change review plus fresh full gates; reject weakening process assertions or delaying production kill.
 - I36 — Post-W25 full project gate passes 436/436 with zero skips/cancellations and actual isolated npm diagnostic pass (artifact://42, 29.93 s). Complete W12 immediately; keep GF1/G1 and W25/W26 pending final independent review, not a test-green self-approval or early commit.
 - I37 — Final W26 PASS converges with zero Fix/Replan/reopened Discards; reread full ledger and reconcile all AC/work/findings. W01–W26 done, GF1/G1 closed, full final gates green, no open decision/unknown section/blocker/deferral. Choose owned green checkpoint then final ledger delivery; reject extra code changes or audits.
+- I38 — Owned green joint checkpoint commits as `6e61d57`; record actual hash and end the conditional P3 freeze. Choose final ledger-only delivery, with all 26 work items done and no behavioral change requiring new verification; stop after committing this record.
