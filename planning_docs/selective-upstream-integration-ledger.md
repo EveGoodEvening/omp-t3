@@ -25,7 +25,7 @@ P2 is a firm candidate pending review of the clarifications below; P3/P4 remain 
 
 - **P1 — Evidence and planning:** tentative; unreviewed. Persist the prior research; draft testable AC and bounded slices; resolve queue lifecycle/API uncertainties before implementation.
 - **P2 — Session catalogs and thinking:** firm; unreviewed. Forward live requests and prune catalog responses, retaining ID types, empty live arrays, real failures and explicit errors for malformed entries. Remove cache/fabricated lists/prewarm; retain shell-free standalone discovery using process cwd/env and binary, existing public diagnostic syntax, and no unused overlay plumbing. Bound serialized T3 frames to 1 MiB including newline and duplicated lists; return small errors on oversized projection, propagate upstream protocol-1 overflow without claiming repair/chunk support. Advertised effort maps only; resolve unknown capability consumer fallback conservatively. Migrate callers/tests and README/lessons; preserve roles, skills, ownership.
-- **P3 — Atomic Stop translation:** unknown-until(queue design and runtime/API evidence); unreviewed. Port behavior only after addressing stale operation and unbounded buffering findings.
+- **P3 — Atomic Stop translation:** firm; unreviewed; design frozen until its next green implementation checkpoint (D06). One generation-scoped Stop transaction, unique internal ID/command correlation, atomic cancellation/sweep once, one completed-clear follower latch invalidated by new mutation. Gate only terminal output and idle settlement-capable `get_state` replies until clear is consumed via follower (or bounded expiry); pass unrelated traffic. Bounded request/storage deadlines shorter than T3's 2-second clear timeout; explicit busy errors rather than buffering new mutations. Surface truncation/image loss. Unsupported/malformed/indeterminate/timeout/transport failure must report honestly and close this owned provider connection without atomic/plain-abort retries. Cover all settlement emitters and disposal; do not maintain another message queue.
 - **P4 — Conditional live-tool routing:** unknown-until(OMP lifecycle/API evidence); unreviewed. Preserve local opt-out/model-policy/concurrency contracts; do not take upstream's unconditional policy.
 - **P5 — Documentation, independent review, and final gates:** tentative; unreviewed. Update docs per slice, run project gates at green checkpoints, then review the union and rerun final gates.
 
@@ -47,7 +47,8 @@ P2 is a firm candidate pending review of the clarifications below; P3/P4 remain 
 | W12 | review | 6 | todo | Rerun applicable full project gates after the last change; finalize and commit ledger. |
 | W13 | research | 3,4 | done | [T3/source and modeled runtime evidence](selective-upstream-integration-runtime.md): awaited clear→abort and probe race established; modeled tool tests are not live proof. Two informational OMP commands breached task-specific gating; no RPC session launched. |
 | W14 | design | 3,5 | active | Independent failure-policy proposal; task `ea32b0f4-08a1-47e7-aa9c-782b8be82834` recovered after tool acknowledgement timeout, evidence `selective-upstream-stop-safety-design.md`. |
-| W15 | spike | 4,5 | todo | Obtain actual installed-OMP no-model active-tool lifecycle proof with gated, network-denied, scratch-only configuration. |
+| W15 | spike | 4,5 | active | Actual installed-code proof task `e7cc5c50-cfc5-4208-9d5d-bbf75dff0cac`; gated/network-denied scratch, output `selective-upstream-tool-runtime-proof.md`. |
+| W16 | review | 3,5,6 | todo | Independent P3 plan review of bounded ordering, failure boundary, and accounting; frozen design risks given to reviewers. |
 
 ## Decision log (append-only)
 
@@ -91,6 +92,14 @@ P2 is a firm candidate pending review of the clarifications below; P3/P4 remain 
 - Routing: W13's simplified model is not proof of actual enabled/mounted presentation; W15 must exercise installed code in a safely isolated no-model fixture. This is reachable local work, not an external deferral.
 - Accounting: F05 is resolved by AC3 loss disclosure; F01/F02/F03/F06/F07 stay open until reviewed concrete design/proof. P2's unknown capability behavior remains a review check, not an invitation to hardcode model names.
 
+### D06 — Queue tie-break after two pre-checkpoint replans
+
+- Trigger: D03 and D05 each revised the queue plan without an intervening implementation checkpoint. Apply the required anti-thrashing freeze to P3, not to independent P2/P4.
+- Choice: freeze the small generation-scoped transaction with terminal plus settlement-capable state-response barrier and fail-closed owned-provider teardown; reject global downlink buffering, unbounded waiter lists, silent plain-abort fallback, and external protocol redesign. W14 remains independent design evidence, not another architecture round.
+- Evidence/criteria: [planner proposal §3](selective-upstream-integration-plan.md), [T3 awaited-clear/probe evidence](selective-upstream-integration-runtime.md), [OMP partial-withdraw failure evidence](selective-upstream-integration-spike.md). Criteria: discarded input never executes on shim retry, notice-before-settle, finite liveness/storage, unchanged unrelated streams, no association across new mutation.
+- Plan diff: P3 becomes firm/unreviewed. Keep all existing implementation untouched. No superseded code or work item exists; W07/W08 still cover the same AC3, with W16 reviewing the explicit contract. Add no retries, persistent queue, protocol negotiation, or task scheduler.
+- Accepted design limitations: no protocol Stop ID means a fresh independent abort without intervening mutation can match the single completed-clear follower latch; OMP-truncated texts/images cannot be recovered; T3's display truncates queue notices. These are external protocol limitations, not unfinished implementation. Further plan-rooted contrary findings during freeze are recorded as accepted risks; concrete bugs remain Fix. Freeze ends at the next P3 green checkpoint.
+
 ## Findings and open questions
 | ID | Triage | Status | Finding / reason |
 | --- | --- | --- | --- |
@@ -114,3 +123,4 @@ P2 is a firm candidate pending review of the clarifications below; P3/P4 remain 
 - I06 — TARGETED RESEARCH/SPIKE round 2: verify actual client sequencing and isolated tool lifecycle before selecting generation-scoped follower acknowledgement versus fresh-Stop semantics. Reject more broad exploration; retain the independently drafted catalog plan as the first candidate green slice.
 - I07 — PARTIAL PLAN-REVIEW: choose the independently verifiable catalog slice while queue/runtime research continues. Reject waiting on unrelated uncertainty; any new catalog design constraint resets P2 review before code changes.
 - I08 — SYNTHESIZE → REPLAN/REVIEW: adopt source-backed catalog safeguards and process-context diagnostic boundary; choose targeted Stop probe gating based on actual client, not terminal-only assumptions. Require real installed-tool proof rather than relabel a simplified model as verified.
+- I09 — FREEZE/PLAN-REVIEW: resolve P3 architecture tie-break per mandatory anti-thrashing rule, rather than run a third replan without code. Review the chosen bounded contract; implementation stays gated on independent plan review and concrete failure-boundary acceptance.
