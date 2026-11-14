@@ -226,6 +226,21 @@ For shim-supplied lists, a startup probe waits up to five seconds for OMP's `rea
 
 The probe starts OMP with the launch arguments and agent directory, so configured extensions and MCP servers may initialize during validation as well as during the final launch. Each probe uses its own process group on Unix, which is terminated before the next launch. A `ready` frame validates startup; it does not guarantee model credentials, quotas, or subsequent requests will succeed.
 
+### Subagent model selection
+
+T3 does not read OMP settings, so a `delegate_task` call without `target.model` would inherit the parent thread's model. The adapted T3 bridge fills the omitted model from OMP's live settings instead, before the call reaches T3. The T3 `role` picks the `task.agentModelOverrides` entry:
+
+| `role` | Tried in order |
+| --- | --- |
+| `review` | overrides `reviewer`, `code-reviewer`; then `@slow` (bundled reviewer frontmatter) |
+| `research` | overrides `code-explorer`, `scout`; then `@smol:medium` (bundled scout frontmatter) |
+| `design` | override `code-architect` |
+| `implementation`, `test`, `general`, omitted | override `task` |
+
+`modelRoles.task` is the final fallback. Values follow OMP's model-spec grammar: a `:level` suffix (exact, or a unique prefix of at least two characters such as `:med`) becomes `target.options.thinking`, while `:auto` and `:inherit` set no level. `@role`, legacy `pi/role`, and `*` (the default role) resolve through `modelRoles`. For a fallback list, only the first entry is used. Where OMP would run the session model, the call is left unchanged so T3 inherits the parent model. This covers an unset role and an override of `*`, `default`, `@default`, or `pi/default`. Settings are read on each call, including project config, `--config` overlays, and runtime overrides, so edits apply without a restart.
+
+The fill applies only when the call targets the Pi provider (`providerInstanceId` or `driverKind` omitted or `pi`) on the local machine (no `environmentId`). An explicit `target.model` is never rewritten. A thinking option the caller sets, and an explicitly empty `options` (`{}` or `[]`, which T3 treats as clearing), are kept. If OMP's settings are unreachable or the configured value cannot be parsed, the call passes through unchanged and T3 inherits the parent model. Set `OMPT3_DELEGATE_MODEL_ROLES=0` to disable the fill. When the model policy below is active, it checks the filled model. Its OMP hook also replaces the tool input with the filled call, so the checked model is the one sent even without the adapted bridge.
+
 ### Restricting subagent models
 
 Subagent model restrictions are **off by default**. The former built-in allow/deny lists are commented out in `src/subagent_policy.js`; the shim does not read model choices from AGENTS.md. With both environment variables unset or empty, it adds no model-policy system-prompt appendix, blocking extension, or MCP model guard. The separate delegation-routing policy above remains enabled by default. AGENTS.md and upstream instructions are not changed by this setting.
@@ -241,7 +256,7 @@ Values are comma-separated model IDs or patterns, with `*` as the only wildcard.
 
 Exact rules such as the examples above exclude aliases such as `glm-flash-latest` and variants such as `glm-5.3-flashx`, dated releases, and `:batch`. Add their exact IDs, or a deliberate wildcard, if you want them. Call `orchestrator_capabilities` to find IDs available in your T3 catalog.
 
-When either list is nonempty, the shim appends these rules to the system prompt on every launch path. A blocking OMP extension checks direct T3 delegation calls, and the adapted T3 MCP client checks again before sending `delegate_task`, including calls through registered tool handlers in scripts. Both T3 tool-name prefixes are covered. Every delegation must set `target.model` explicitly. Omitted, denied, or unlisted models return a tool error before a child starts. Allowed calls retain their provider, model options, and other arguments without rewriting the model.
+When either list is nonempty, the shim appends these rules to the system prompt on every launch path. A blocking OMP extension checks direct T3 delegation calls, and the adapted T3 MCP client checks again before sending `delegate_task`, including calls through registered tool handlers in scripts. Both T3 tool-name prefixes are covered. Every delegation needs a model: an explicit `target.model`, or one filled from OMP settings as described above. Unresolved, denied, or unlisted models return a tool error before a child starts. Allowed calls retain their provider, model options, and other arguments without rewriting the model.
 
 Native `task` resolves its final model internally, so the hook blocks it while either list is active and directs the agent to T3 delegation. This also applies with `OMPT3_DELEGATE_TASKS=0`, explicit `--tools=task`, or readiness fallback. Unreadable or incompatible bundled T3 extensions, or failure to write the guard files, refuse the launch instead of silently dropping enforcement. A change only to the skill-inlining marker still allows the model guard to load, with a warning about skill inlining.
 

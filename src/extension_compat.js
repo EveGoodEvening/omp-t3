@@ -21,7 +21,9 @@
  *
  * The copy lives under ~/.cache/omp-t3/ and is rewritten whenever the
  * transformed output differs (T3 refreshes its own cache file on updates).
- * The copy also guards delegate_task at the MCP client boundary. With the
+ * The copy also wraps delegate_task at the MCP client boundary: an omitted
+ * target.model is filled from OMP's modelRoles.task / task.agentModelOverrides
+ * (see delegate_models.js), then the opt-in model policy checks it. With the
  * model policy active, unreadable source, a changed MCP-client marker, or a
  * cache-write failure refuses launch. Skill-path drift only warns. With both
  * model lists cleared, adaptation failures retain the original passthrough.
@@ -32,14 +34,20 @@ const os = require('node:os');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const { createSubagentPolicy, policyRuntimeSource } = require('./subagent_policy.js');
+const { delegateModelsRuntimeSource } = require('./delegate_models.js');
 
 const T3_EXTENSION_BASENAME = 'pi-t3-mcp-extension.ts';
 const MCP_CLIENT_MARKER = 'const client = createMcpClient(endpoint, token);';
+// `pi` is the extension factory's ExtensionAPI parameter, in scope at the
+// marker. An omitted delegate_task model is filled from OMP's settings first
+// (src/delegate_models.js), so the policy checks the model actually sent.
 const MCP_CLIENT_REPLACEMENT = [
   policyRuntimeSource(),
+  delegateModelsRuntimeSource('pi'),
   MCP_CLIENT_MARKER,
   'const ompt3CallTool = client.callTool.bind(client);',
   'client.callTool = async (name, params, signal) => {',
+  '  params = ompt3DelegateModels.apply(name, params);',
   '  const reason = ompt3SubagentPolicy.checkTool(name, params);',
   '  if (reason) return { isError: true, content: [{ type: "text", text: reason }] };',
   '  return ompt3CallTool(name, params, signal);',
@@ -194,13 +202,19 @@ async function adaptT3ExtensionArgs(ompArgs, options = {}) {
     }
 
     let adapted = source;
-    if (policy.active) {
-      const clients = source.split(MCP_CLIENT_MARKER).length - 1;
-      if (clients !== 1) {
-        throw new Error(`Cannot enforce subagent model policy: T3 MCP client marker found ${clients} times in ${value}. Update omp-t3 for this T3 version; refusing an unguarded launch.`);
-      }
+    let changed = false;
+    const clients = source.split(MCP_CLIENT_MARKER).length - 1;
+    if (clients === 1) {
       // A callback preserves literal $& in the embedded regex escaping code.
       adapted = adapted.replace(MCP_CLIENT_MARKER, () => MCP_CLIENT_REPLACEMENT);
+      changed = true;
+    } else if (policy.active) {
+      throw new Error(`Cannot enforce subagent model policy: T3 MCP client marker found ${clients} times in ${value}. Update omp-t3 for this T3 version; refusing an unguarded launch.`);
+    } else {
+      log(
+        `T3 extension ${value} no longer matches the known source (MCP client marker found ${clients} times). ` +
+        'delegate_task will not default to OMP\'s configured task models until omp-t3 is updated.'
+      );
     }
     const occurrences = source.split(GET_COMMANDS_MARKER).length - 1;
     if (occurrences !== 1) {
@@ -208,10 +222,11 @@ async function adaptT3ExtensionArgs(ompArgs, options = {}) {
         `T3 extension ${value} no longer matches the known source (getCommands marker found ${occurrences} times). ` +
         '$name skill inlining will fail until omp-t3 is updated.'
       );
-      if (!policy.active) continue;
     } else {
       adapted = adapted.replace(GET_COMMANDS_MARKER, GET_COMMANDS_REPLACEMENT);
+      changed = true;
     }
+    if (!changed) continue;
 
     try {
       fs.mkdirSync(path.dirname(cachePath), { recursive: true });

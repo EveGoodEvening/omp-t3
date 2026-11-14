@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const crypto = require('node:crypto');
 const os = require('node:os');
 const path = require('node:path');
+const { delegateModelsRuntimeSource } = require('./delegate_models.js');
 
 // Keep this factory self-contained: the extension adapter embeds the same
 // implementation in T3's TypeScript bridge, without runtime imports.
@@ -57,9 +58,11 @@ function createSubagentPolicy(env = process.env) {
     summary,
     'These restrictions apply to subagents only; the parent model is unchanged.',
     'Use T3 delegate_task for subagents. Native task is blocked while this policy is active.',
-    'Before delegating, use orchestrator_capabilities to find available model IDs. Set target.model explicitly on every call, including nested delegations; never inherit the parent model.',
+    env.OMPT3_DELEGATE_MODEL_ROLES === '0'
+      ? 'Before delegating, use orchestrator_capabilities to find available model IDs. Set target.model explicitly on every call, including nested delegations; never inherit the parent model.'
+      : 'Before delegating, use orchestrator_capabilities to find available model IDs. Set target.model explicitly, or omit it on Pi targets to use OMP\'s configured task model (task.agentModelOverrides by role, then modelRoles.task); the parent model is never inherited.',
     'Rules match model IDs case-insensitively. Unqualified rules match the final /-separated model name; qualified rules match the full ID. Only * is a wildcard. Use the catalog ID, not a display name.',
-    'Prohibited or omitted models return an error before delegation. Retry with an allowed model; do not bypass the policy through another tool or command.'
+    'Prohibited models, and omitted models that cannot be filled from OMP settings, return an error before delegation. Retry with an allowed model; do not bypass the policy through another tool or command.'
   ].join('\n') : '';
   return { allowed, disallowed, active, checkModel, checkTool, prompt };
 }
@@ -76,9 +79,16 @@ function subagentPolicyArgs(policy) {
   const source = [
     policyRuntimeSource(),
     'export default function ompT3SubagentPolicy(pi) {',
+    // Check the model the T3 bridge will send: it fills an omitted
+    // delegate_task model from OMP settings before calling MCP.
+    `  ${delegateModelsRuntimeSource('pi')}`,
     '  pi.on("tool_call", (event) => {',
-    '    const reason = ompt3SubagentPolicy.checkTool(event.toolName, event.input);',
+    // Send what was checked: without the adapted bridge nothing else fills
+    // the model, and an approved fill must not degrade to parent inheritance.
+    '    const input = ompt3DelegateModels.apply(event.toolName, event.input);',
+    '    const reason = ompt3SubagentPolicy.checkTool(event.toolName, input);',
     '    if (reason) return { block: true, reason };',
+    '    if (input !== event.input) return { input };',
     '  });',
     '}'
   ].join('\n');

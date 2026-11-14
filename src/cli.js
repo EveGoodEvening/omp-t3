@@ -32,6 +32,7 @@ const DELEGATION_POLICY = [
   '',
   'In-process subagents are disabled in this session. When the user asks for subagents, delegates, reviewers, or parallel workers — or when a task is large enough to delegate — use the T3 `delegate_task` MCP tool.',
   'Each delegation becomes an isolated, openable T3 thread with its own provider scope; results return to this thread automatically.',
+  'Model selection: leave `target.model` unset unless the user names a model; omp-t3 fills it, with the thinking level, from OMP\'s `task.agentModelOverrides` (chosen by `role`: review → reviewer/code-reviewer, research → code-explorer/scout, design → code-architect, otherwise task) or `modelRoles.task`. Set `role` to match the work.',
   'Do your own quick, direct work (reads, searches, edits, short commands) with your regular tools instead of delegating.',
   'Do not attempt to use an in-process `task`-style subagent tool: it is intentionally unavailable here.'
 ].join('\n');
