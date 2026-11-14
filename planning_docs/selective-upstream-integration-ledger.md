@@ -24,7 +24,7 @@ Draft pending independent planning/review; no implementation authorized yet.
 ## Plan
 
 - **P1 — Evidence and planning:** tentative; unreviewed. Persist the prior research; draft testable AC and bounded slices; resolve queue lifecycle/API uncertainties before implementation.
-- **P2 — Session catalogs and thinking:** tentative; unreviewed. Selectively adapt c32d3ed catalog changes and 0088817, retaining local safe execution and contracts.
+- **P2 — Session catalogs and thinking:** firm; unreviewed. Forward `get_available_models` to the running OMP session; prune its matching response before T3; preserve ID type and session failures; malformed catalog shape returns explicit error. Remove shared persistence/fabricated fallback and separate CLI prewarm. Standalone `--check` uses shell-safe discovery with supported launch context; map CLI thinking arrays and RPC `thinking.efforts`. Migrate all affected callers/contracts and document changed error behavior. Preserve streaming, skills, model role defaults, version/install/update ownership.
 - **P3 — Atomic Stop translation:** unknown-until(queue design and runtime/API evidence); unreviewed. Port behavior only after addressing stale operation and unbounded buffering findings.
 - **P4 — Conditional live-tool routing:** unknown-until(OMP lifecycle/API evidence); unreviewed. Preserve local opt-out/model-policy/concurrency contracts; do not take upstream's unconditional policy.
 - **P5 — Documentation, independent review, and final gates:** tentative; unreviewed. Update docs per slice, run project gates at green checkpoints, then review the union and rerun final gates.
@@ -36,7 +36,7 @@ Draft pending independent planning/review; no implementation authorized yet.
 | W01 | research | 1–6 | active | Planning worker persists prior research and relevant contracts in `selective-upstream-integration-plan.md`. |
 | W02 | design | 1–6 | active | Planning worker drafts AC, bounded slices and corrected queue proposal; task `674d9fe3-f389-4852-ae2d-67cff74813db`. |
 | W03 | spike | 3,4 | done | Source/API evidence and three abstract scratch scenarios in [spike](selective-upstream-integration-spike.md); no OMP runtime launched; runtime/order questions remain F03/F07. |
-| W04 | review | 1–6 | todo | Independent PLAN-REVIEW of firm sections and AC. |
+| W04 | review | 1–6 | active | Independent PLAN-REVIEW: P2/AC1,2,5 first; queue/routing sections remain gated on evidence. |
 | W05 | impl | 1,2,5 | todo | Implement and verify session catalogs + thinking levels. |
 | W06 | review | 1,2,5 | todo | Independent catalog slice REVIEW-LOOP. |
 | W07 | impl | 3,5 | todo | Implement and verify corrected atomic Stop/queue compatibility. |
@@ -74,6 +74,13 @@ Draft pending independent planning/review; no implementation authorized yet.
 - Options: copy upstream's global buffering/waiter design; terminal-only barrier plus explicit generation-scoped association; require external protocol correlation. Choice pending independent plan and T3 sequencing evidence; no implementation authorized.
 - Rationale: external OMP response fitting already discards some restored information, and retries after ambiguous withdrawal can destroy user intent. These are correctness constraints, not effort-based scope reductions.
 
+### D04 — Decouple the known catalog slice
+
+- Question: Must catalog implementation wait for unresolved queue/routing architecture?
+- Options: hold all slices; independently review the already-source-backed catalog contract first.
+- Choice: firm P2 now, then independent P2 PLAN-REVIEW; keep P3/P4 unknown-until. The planning worker's later evidence may refine the candidate, which would require re-review before implementation.
+- Rationale/evidence: `0088817` and the catalog/proxy portions of `c32d3ed` are independent of the queue/tool lifecycle decisions. Serial implementation owns `src/model_catalog.js`, catalog-related `src/proxy.js` and `bin/omp-t3`, targeted tests, README and lessons; no code is currently red or owned.
+
 ## Findings and open questions
 | ID | Triage | Status | Finding / reason |
 | --- | --- | --- | --- |
@@ -94,3 +101,4 @@ Draft pending independent planning/review; no implementation authorized yet.
 - I04 — GATE SAFETY: light inspection of diagnostic entrypoint found `--check` writes the session bridge. Choose isolated diagnostic environment (D02), reject bare real-HOME execution; no code or external settings changed.
 - I05 — EVALUATE SPIKE → REPLAN: W03 supplies source evidence and abstract proof, not a live-runtime compatibility claim. Record newly discovered truncation/indeterminate-failure constraints (D03); investigate actual client sequencing and active-tool preservation before choosing the queue/routing design.
 - I06 — TARGETED RESEARCH/SPIKE round 2: verify actual client sequencing and isolated tool lifecycle before selecting generation-scoped follower acknowledgement versus fresh-Stop semantics. Reject more broad exploration; retain the independently drafted catalog plan as the first candidate green slice.
+- I07 — PARTIAL PLAN-REVIEW: choose the independently verifiable catalog slice while queue/runtime research continues. Reject waiting on unrelated uncertainty; any new catalog design constraint resets P2 review before code changes.
