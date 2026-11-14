@@ -90,8 +90,9 @@ test('passes the original through with a warning when the source drifts', async 
     assert.strictEqual(extensionPath, null);
     assert.deepStrictEqual(args, ['--extension', drifted]);
     assert.strictEqual(fs.existsSync(cachePath), false);
-    assert.strictEqual(warnings.length, 1);
-    assert.match(warnings[0], /no longer matches the known source/);
+    assert.strictEqual(warnings.length, 2, 'one warning per drifted marker');
+    assert.match(warnings[0], /MCP client marker found 0 times/);
+    assert.match(warnings[1], /getCommands marker found 0 times/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
     fs.rmSync(path.dirname(cachePath), { recursive: true, force: true });
