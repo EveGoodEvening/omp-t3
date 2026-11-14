@@ -45,7 +45,7 @@ Draft pending independent planning/review; no implementation authorized yet.
 | W10 | review | 4,5 | todo | Independent routing REVIEW-LOOP. |
 | W11 | review | 1–6 | todo | Final whole-change REVIEW-LOOP and accounting. |
 | W12 | review | 6 | todo | Rerun applicable full project gates after the last change; finalize and commit ledger. |
-| W13 | research | 3,4 | todo | Verify actual T3 Stop sequencing and safely test installed OMP active-tool lifecycle/presentation without paid calls or user plugins. |
+| W13 | research | 3,4 | active | Verify T3 Stop sequencing and isolated OMP active-tool lifecycle/presentation; task `26ee3944-b423-46ac-8cbc-55ef14d10ab2`, evidence `selective-upstream-integration-runtime.md`. |
 
 ## Decision log (append-only)
 
@@ -93,3 +93,4 @@ Draft pending independent planning/review; no implementation authorized yet.
 - I03 — BASELINE GATE: orchestrator ran `npm test` on the pre-implementation tree: 222 passed, 0 failed/skipped (artifact://7). `package.json` exposes test/check only, no build/typecheck/lint scripts. This establishes a green starting checkpoint, not final verification; no implementation was started while plan/API questions remain open.
 - I04 — GATE SAFETY: light inspection of diagnostic entrypoint found `--check` writes the session bridge. Choose isolated diagnostic environment (D02), reject bare real-HOME execution; no code or external settings changed.
 - I05 — EVALUATE SPIKE → REPLAN: W03 supplies source evidence and abstract proof, not a live-runtime compatibility claim. Record newly discovered truncation/indeterminate-failure constraints (D03); investigate actual client sequencing and active-tool preservation before choosing the queue/routing design.
+- I06 — TARGETED RESEARCH/SPIKE round 2: verify actual client sequencing and isolated tool lifecycle before selecting generation-scoped follower acknowledgement versus fresh-Stop semantics. Reject more broad exploration; retain the independently drafted catalog plan as the first candidate green slice.
