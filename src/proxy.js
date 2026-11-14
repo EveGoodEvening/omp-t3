@@ -27,10 +27,9 @@ function createProxyPipeline(options) {
     childOut,
     settlementTracker = new SettlementTracker(),
     doctor = new ContractDoctor({ shimVersion: pkg.version }),
-    modelManager = new ModelCatalogManager((err) => doctor.reportDiscoveryFailure(err)),
+    modelManager = new ModelCatalogManager(),
     subagentBridge = new SubagentBridge(),
-    commandBridge = new CommandBridge(),
-    ompPath = 'omp'
+    commandBridge = new CommandBridge()
   } = options;
 
   let rlClient = null;
@@ -113,13 +112,6 @@ function createProxyPipeline(options) {
         subagentBridge.disarmAbort();
       }
 
-      // 2. Intercept get_available_models
-      const modelResult = modelManager.handleUpstreamFrame(trimmed, ompPath);
-      if (modelResult.intercepted && modelResult.response) {
-        clientOut.write(modelResult.response);
-        return; // Intercepted: Do not forward to OMP
-      }
-
       // 3. Serve get_commands from OMP's live catalog (translated to the Pi
       //    dialect) instead of an empty list — this populates T3's `/` and `$`
       //    menus with OMP's builtins and skills.
@@ -169,6 +161,12 @@ function createProxyPipeline(options) {
     // Downstream stream: OMP -> Translator -> Client (T3 Code)
     rlChild.on('line', (line) => {
       const trimmed = line.trim();
+      // Catalogs come only from this running session, never a CLI/cache substitute.
+      const modelResult = modelManager.handleDownstreamFrame(line);
+      if (modelResult.handled) {
+        clientOut.write(modelResult.line);
+        return;
+      }
       // 0. On the child's ready frame, opt into subagent frame forwarding so
       //    the bridge can enrich T3's subagent cards with live status/text.
       if (!subagentSubscriptionSent && trimmed.includes('"type":"ready"')) {
@@ -274,11 +272,6 @@ function spawnAndProxy(ompArgs, options = {}) {
   setupSessionSymlink(true);
 
   const doctor = new ContractDoctor({ shimVersion: pkg.version });
-  const modelManager = new ModelCatalogManager((err) => doctor.reportDiscoveryFailure(err));
-  // Pre-warm model catalog cache so get_available_models is instantaneous.
-  // MUST be async: a synchronous execSync here stalls every frame until the
-  // omp models --json subprocess finishes (~0.6s+ with the real binary).
-  modelManager.prewarm(ompPath);
 
   const childEnv = {
     ...process.env,
@@ -297,9 +290,7 @@ function spawnAndProxy(ompArgs, options = {}) {
     clientOut: process.stdout,
     childIn: child.stdin,
     childOut: child.stdout,
-    modelManager,
-    doctor,
-    ompPath
+    doctor
   });
   doctor.init(ompPath);
 

@@ -24,9 +24,10 @@ test('E2E: Full turn lifecycle from prompt to agent_settled', async () => {
   clientIn.write('{"type": "get_available_models", "id": "req-init"}\n');
   await new Promise((r) => setImmediate(r));
 
-  // Verify get_available_models was intercepted and NOT sent to child
-  assert.equal(childLines.lines.length, 0);
-  assert.equal(clientLines.lines.length, 1);
+  assert.deepEqual(childLines.getJson(), [{ type: 'get_available_models', id: 'req-init' }]);
+  assert.equal(clientLines.lines.length, 0);
+  childOut.write('{"type":"response","command":"get_available_models","id":"req-init","success":true,"data":{"models":[{"id":"session-model","provider":"local"}]}}\n');
+  await new Promise((r) => setImmediate(r));
   const modelResp = JSON.parse(clientLines.lines[0]);
   assert.equal(modelResp.id, 'req-init');
   assert.equal(modelResp.command, 'get_available_models');
@@ -38,8 +39,8 @@ test('E2E: Full turn lifecycle from prompt to agent_settled', async () => {
   clientIn.write(promptFrame + '\n');
   await new Promise((r) => setImmediate(r));
 
-  assert.equal(childLines.lines.length, 1);
-  assert.equal(childLines.lines[0], promptFrame);
+  assert.equal(childLines.lines.length, 2);
+  assert.equal(childLines.lines[1], promptFrame);
 
   // 3. Child OMP streams turn_start, text_delta, thinking_delta
   childOut.write('{"type": "turn_start", "turn": 1}\n');

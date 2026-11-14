@@ -143,13 +143,3 @@ test('drift notice shares the 24h rate-limit ledger (option passes only from the
     }
   });
 });
-
-test('discovery-failure reports never emit in-thread notices', () => {
-  withTempStateHome(() => {
-    const doctor = new ContractDoctor({ ompPath: null, ompVersion: '18.12.0', issuesEnabled: false });
-    const notices = [];
-    doctor.onNotice = (line) => notices.push(line);
-    doctor.reportDiscoveryFailure(new Error('omp models --json exited 1'));
-    assert.equal(notices.length, 0, 'no active turn exists during discovery: consumer renders nothing');
-  });
-});

@@ -113,11 +113,11 @@ When --mode rpc is received from T3 Code, it is automatically rewritten to --mod
     if (ompPath) {
       try {
         const mgr = new ModelCatalogManager();
-        const models = mgr.getModels(ompPath);
-        const resp = mgr.createModelResponse('check-test', ompPath);
+        const models = mgr.discoverModels(ompPath);
+        const resp = mgr.serializeModels({ id: 'check-test' }, models);
         const sizeKb = (Buffer.byteLength(resp, 'utf8') / 1024).toFixed(1);
         console.log(`[PASS] Model catalog discovery succeeded: ${models.length} models discovered.`);
-        console.log(`       Safe payload size: ${sizeKb} KB (well within 1024 KB RPC limit).`);
+        console.log(`       Bounded payload size: ${sizeKb} KB (maximum 1024 KB including newline).`);
       } catch (err) {
         console.error(`[FAIL] Model discovery error: ${err.message}`);
         hasErrors = true;
