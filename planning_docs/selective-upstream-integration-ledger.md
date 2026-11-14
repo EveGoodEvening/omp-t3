@@ -46,9 +46,10 @@ P2 is a firm candidate pending review of the clarifications below; P3/P4 remain 
 | W11 | review | 1–6 | todo | Final whole-change REVIEW-LOOP and accounting. |
 | W12 | review | 6 | todo | Rerun applicable full project gates after the last change; finalize and commit ledger. |
 | W13 | research | 3,4 | done | [T3/source and modeled runtime evidence](selective-upstream-integration-runtime.md): awaited clear→abort and probe race established; modeled tool tests are not live proof. Two informational OMP commands breached task-specific gating; no RPC session launched. |
-| W14 | design | 3,5 | active | Independent failure-policy proposal; task `ea32b0f4-08a1-47e7-aa9c-782b8be82834` recovered after tool acknowledgement timeout, evidence `selective-upstream-stop-safety-design.md`. |
+| W14 | design | 3,5 | done | [Independent safety proposal](selective-upstream-stop-safety-design.md) supports immediate owned-process force termination; timer/correlation/state choices judged against newer T3 evidence in D07. |
 | W15 | spike | 4,5 | active | Actual installed-code proof task `e7cc5c50-cfc5-4208-9d5d-bbf75dff0cac`; gated/network-denied scratch, output `selective-upstream-tool-runtime-proof.md`. |
-| W16 | review | 3,5,6 | todo | Independent P3 plan review of bounded ordering, failure boundary, and accounting; frozen design risks given to reviewers. |
+| W16 | review | 3,5,6 | active | Independent P3 plan review task `c4fb87ce-bff0-4758-97da-374ffff65ac1`; frozen design risks given, output `selective-upstream-stop-plan-review.md`. |
+| W17 | review | 1–6 | active | Independent plan accounting/preservation/final-gate review (P1/P5); distinct from subsystem design reviews, output `selective-upstream-plan-accounting-review.md`. |
 
 ## Decision log (append-only)
 
@@ -100,6 +101,13 @@ P2 is a firm candidate pending review of the clarifications below; P3/P4 remain 
 - Plan diff: P3 becomes firm/unreviewed. Keep all existing implementation untouched. No superseded code or work item exists; W07/W08 still cover the same AC3, with W16 reviewing the explicit contract. Add no retries, persistent queue, protocol negotiation, or task scheduler.
 - Accepted design limitations: no protocol Stop ID means a fresh independent abort without intervening mutation can match the single completed-clear follower latch; OMP-truncated texts/images cannot be recovered; T3's display truncates queue notices. These are external protocol limitations, not unfinished implementation. Further plan-rooted contrary findings during freeze are recorded as accepted risks; concrete bugs remain Fix. Freeze ends at the next P3 green checkpoint.
 
+### D07 — Judge independent Stop safety evidence against the selected design
+
+- Evidence: [safety proposal](selective-upstream-stop-safety-design.md) independently rejects compatibility fallback and EOF-only shutdown; installed OMP drains accepted serial work on stdin EOF. This supports D06's fail-closed choice.
+- Adopt: immediate owned-OMP `SIGKILL` handoff before pipe closure, no inherited process-group signals, no auto restart/replay/retry, explicit correlated failure/notice and bounded nonzero transport exit, actual-emission settlement cleanup. Preserve existing native-child cancellation attempts; do not promise control over external T3 delegates or already-running tools.
+- Do not adopt: its unmeasured 5-second deadline (T3 clear timeout is 2 seconds), fresh Stop for every post-clear abort (ordinary T3 awaits clear), or new `pendingMessageCount` sentinel instead of the chosen narrowly bounded probe barrier. These are rejected alternatives, not unfinished work; D06 remains frozen. Concrete reviewed implementation details may tighten bounds without changing architecture.
+- Outcome: D06 supersedes D03's open architecture choice and W14's alternative timing/correlation proposals. External limitations remain the D06 accepted-risk list. No owned implementation exists yet; no code needs reverting.
+
 ## Findings and open questions
 | ID | Triage | Status | Finding / reason |
 | --- | --- | --- | --- |
@@ -124,3 +132,4 @@ P2 is a firm candidate pending review of the clarifications below; P3/P4 remain 
 - I07 — PARTIAL PLAN-REVIEW: choose the independently verifiable catalog slice while queue/runtime research continues. Reject waiting on unrelated uncertainty; any new catalog design constraint resets P2 review before code changes.
 - I08 — SYNTHESIZE → REPLAN/REVIEW: adopt source-backed catalog safeguards and process-context diagnostic boundary; choose targeted Stop probe gating based on actual client, not terminal-only assumptions. Require real installed-tool proof rather than relabel a simplified model as verified.
 - I09 — FREEZE/PLAN-REVIEW: resolve P3 architecture tie-break per mandatory anti-thrashing rule, rather than run a third replan without code. Review the chosen bounded contract; implementation stays gated on independent plan review and concrete failure-boundary acceptance.
+- I10 — JUDGE: independent safety proposal corroborates force termination, rejects EOF-only shutdown, and supplies process-closure acceptance cases. Keep the source-backed frozen barrier/token architecture; reject its unmeasured timer and incompatible correlation alternatives rather than start another design round.
