@@ -33,9 +33,9 @@ Draft pending independent planning/review; no implementation authorized yet.
 
 | ID | Kind | AC | Status | Work / verification |
 | --- | --- | --- | --- | --- |
-| W01 | research | 1–6 | todo | Persist prior research and inspect relevant existing contracts; provide evidence files. |
-| W02 | design | 1–6 | todo | Planning worker drafts/revises AC, bounded slices, gates, and dependency decisions. |
-| W03 | spike | 3,4 | todo | Resolve atomic Stop lifecycle and OMP API/lifecycle fit without touching tracked implementation. |
+| W01 | research | 1–6 | active | Planning worker persists prior research and relevant contracts in `selective-upstream-integration-plan.md`. |
+| W02 | design | 1–6 | active | Planning worker drafts AC, bounded slices and corrected queue proposal; task `674d9fe3-f389-4852-ae2d-67cff74813db`. |
+| W03 | spike | 3,4 | active | Independent scratch/API worker resolves Stop/tool lifecycle; task `baa21cb2-bb18-4215-903e-6fa2a53f36d4`, evidence `selective-upstream-integration-spike.md`. |
 | W04 | review | 1–6 | todo | Independent PLAN-REVIEW of firm sections and AC. |
 | W05 | impl | 1,2,5 | todo | Implement and verify session catalogs + thinking levels. |
 | W06 | review | 1,2,5 | todo | Independent catalog slice REVIEW-LOOP. |
@@ -69,3 +69,4 @@ Draft pending independent planning/review; no implementation authorized yet.
 ## Iteration log
 
 - I01 — ASSESS → PLAN/RESEARCH: clean baseline, historical plans unrelated; create/commit this ledger first. Next delegate planning and independent high-impact investigation; reject immediate cherry-picks. Queue/API evidence can revise the tentative design before implementation.
+- I02 — RESEARCH/DESIGN + SPIKE in parallel: shared read-only implementation inspection, disjoint evidence files, no code edits. Independent queue proposals will be judged on ordering, liveness, lifecycle isolation, compatibility, and bounded complexity. Reject copying upstream's adapter unchanged; API/runtime evidence determines firm routing/queue sections.
