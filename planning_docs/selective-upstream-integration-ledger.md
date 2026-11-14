@@ -12,10 +12,10 @@
 
 ## Acceptance criteria
 
-P2 is a firm candidate pending review of the clarifications below; P3/P4 remain gated. No implementation authorized until its section is reviewed.
+P1/P2/P5 are firm and independently reviewed; only P2 implementation is authorized now. P3 awaits W16; P4 awaits actual API proof and plan review.
 
 1. Running-session `get_available_models` responses are pruned for T3 with available request ID types preserved; standalone `--check` honors its process cwd/environment and resolved binary (no new overlay/profile CLI syntax). No persisted or fabricated catalog is served. Empty live lists succeed; empty standalone discovery fails. Malformed entries produce a correlated error without killing the proxy. Enforce the 1 MiB UTF-8 output-frame ceiling including newline and both list fields; upstream protocol-1 overflow errors pass through without invented IDs or fallback.
-2. Map advertised CLI arrays and live RPC `thinking.efforts` to recognized effort levels, including advertised `xhigh`/`max`; unknown/boolean/budget-only capabilities must not invent selectable effort support. Preserve reasoning separately. Confirm T3's map/fallback semantics during P2 review.
+2. Map advertised CLI arrays and live RPC `thinking.efforts` to all seven recognized effort keys, including advertised `xhigh`/`max`; every absent/unknown effort is explicitly null. Unknown/boolean/budget-only capabilities get a complete all-null map, preventing T3's lower-level default ladder. Preserve reasoning and caller/role thinking options separately.
 3. T3 Stop (`clear_queue` then `abort`, or lone `abort`) atomically withdraws queued input through OMP's `abort_and_restore_queue`, returns available withdrawn texts with original IDs, preserves settlement/cancellation ordering, and does not associate later Stops with stale operations or hold unrelated responses indefinitely. Surface upstream truncation/image-loss diagnostics rather than promise recovery of omitted data. Choose and verify unsupported/indeterminate-failure policy before implementation (D03/D05).
 4. Default delegation routing preserves OMP's resolved tools except native `task`, avoiding fixed-list discovery probes when supported. Preserve `OMPT3_DELEGATE_TASKS=0`, explicit `--tools` precedence, native-task concurrency caps, opt-in model restrictions, and OMP role/model/thinking inheritance.
 5. Existing `--offline` compatibility, shell-safe executable invocation, skill/command menus, startup adaptation, and unrelated release/install/issue/update ownership remain intact. Documentation/changelog describe the new contracts and their limitations.
@@ -23,11 +23,11 @@ P2 is a firm candidate pending review of the clarifications below; P3/P4 remain 
 
 ## Plan
 
-- **P1 — Evidence and planning:** tentative; unreviewed. Persist the prior research; draft testable AC and bounded slices; resolve queue lifecycle/API uncertainties before implementation.
-- **P2 — Session catalogs and thinking:** firm; unreviewed. Forward live requests and prune catalog responses, retaining ID types, empty live arrays, real failures and explicit errors for malformed entries. Remove cache/fabricated lists/prewarm; retain shell-free standalone discovery using process cwd/env and binary, existing public diagnostic syntax, and no unused overlay plumbing. Bound serialized T3 frames to 1 MiB including newline and duplicated lists; return small errors on oversized projection, propagate upstream protocol-1 overflow without claiming repair/chunk support. Advertised effort maps only; resolve unknown capability consumer fallback conservatively. Migrate callers/tests and README/lessons; preserve roles, skills, ownership.
+- **P1 — Evidence and planning:** firm; reviewed @2e9fa03 ([accounting review](selective-upstream-plan-accounting-review.md)). Persisted independent source/proposals, explicit AC and work ownership; continue adaptive evidence/review decisions rather than a fixed implementation sequence.
+- **P2 — Session catalogs and thinking:** firm; reviewed @2e9fa03 ([round-two review](selective-upstream-catalog-plan-review-r2.md)). Forward live requests and prune catalog responses, retaining ID types, empty live arrays, real failures and explicit errors for malformed entries. Remove cache/fabricated lists/prewarm; retain shell-free standalone discovery using process cwd/env and binary, existing public diagnostic syntax, no unused overlay plumbing. Bound serialized T3 success to 1 MiB including LF and duplicated lists; emit small errors on oversize and propagate OMP protocol-1 errors without invented IDs/chunk support. Emit complete seven-key maps, all-null for unknown capability; migrate callers/tests/docs and preserve roles, skills and ownership.
 - **P3 — Atomic Stop translation:** firm; unreviewed; design frozen until its next green implementation checkpoint (D06). One generation-scoped Stop transaction, unique internal ID/command correlation, atomic cancellation/sweep once, one completed-clear follower latch invalidated by new mutation. Gate only terminal output and idle settlement-capable `get_state` replies until clear is consumed via follower (or bounded expiry); pass unrelated traffic. Bounded request/storage deadlines shorter than T3's 2-second clear timeout; explicit busy errors rather than buffering new mutations. Surface truncation/image loss. Unsupported/malformed/indeterminate/timeout/transport failure must report honestly and close this owned provider connection without atomic/plain-abort retries. Cover all settlement emitters and disposal; do not maintain another message queue.
 - **P4 — Conditional live-tool routing:** unknown-until(OMP lifecycle/API evidence); unreviewed. Preserve local opt-out/model-policy/concurrency contracts; do not take upstream's unconditional policy.
-- **P5 — Documentation, independent review, and final gates:** tentative; unreviewed. Update docs per slice, run project gates at green checkpoints, then review the union and rerun final gates.
+- **P5 — Documentation, independent review, and final gates:** firm; reviewed @2e9fa03 ([accounting review](selective-upstream-plan-accounting-review.md)). Update per-slice docs/Unreleased/lessons, independent slice and final union review; targeted behavioral checks then full `npm test`/isolated `npm run check` at checkpoints and after last change. No absent build/lint/typecheck gate, no real-user configuration, gh, paid model, plugin install, deployment or push.
 
 ## Work items
 
@@ -37,7 +37,7 @@ P2 is a firm candidate pending review of the clarifications below; P3/P4 remain 
 | W02 | design | 1–6 | done | [Independent proposal](selective-upstream-integration-plan.md) supplies bounded slices/AC and queue alternative; accepted details and unresolved triggers are controlled here (D04/D05). |
 | W03 | spike | 3,4 | done | Source/API evidence and three abstract scratch scenarios in [spike](selective-upstream-integration-spike.md); no OMP runtime launched; runtime/order questions remain F03/F07. |
 | W04 | review | 1–6 | active | Independent PLAN-REVIEW: P2/AC1,2,5 first; queue/routing sections remain gated on evidence. |
-| W05 | impl | 1,2,5 | todo | Implement and verify session catalogs + thinking levels. |
+| W05 | impl | 1,2,5 | active | Authorize reviewed P2 catalog/thinking slice only; independent implementation worker and targeted checks required. |
 | W06 | review | 1,2,5 | todo | Independent catalog slice REVIEW-LOOP. |
 | W07 | impl | 3,5 | todo | Implement and verify corrected atomic Stop/queue compatibility. |
 | W08 | review | 3,5 | todo | Independent Stop/queue REVIEW-LOOP. |
@@ -49,7 +49,7 @@ P2 is a firm candidate pending review of the clarifications below; P3/P4 remain 
 | W14 | design | 3,5 | done | [Independent safety proposal](selective-upstream-stop-safety-design.md) supports immediate owned-process force termination; timer/correlation/state choices judged against newer T3 evidence in D07. |
 | W15 | spike | 4,5 | active | Actual installed-code proof task `e7cc5c50-cfc5-4208-9d5d-bbf75dff0cac`; gated/network-denied scratch, output `selective-upstream-tool-runtime-proof.md`. |
 | W16 | review | 3,5,6 | active | Independent P3 plan review task `c4fb87ce-bff0-4758-97da-374ffff65ac1`; frozen design risks given, output `selective-upstream-stop-plan-review.md`. |
-| W17 | review | 1–6 | active | Independent plan accounting/preservation/final-gate review (P1/P5); distinct from subsystem design reviews, output `selective-upstream-plan-accounting-review.md`. |
+| W17 | review | 1–6 | done | [Accounting PASS](selective-upstream-plan-accounting-review.md) approves P1/P5 procedure only; implementation/final gates remain open. |
 
 ## Decision log (append-only)
 
@@ -108,6 +108,13 @@ P2 is a firm candidate pending review of the clarifications below; P3/P4 remain 
 - Do not adopt: its unmeasured 5-second deadline (T3 clear timeout is 2 seconds), fresh Stop for every post-clear abort (ordinary T3 awaits clear), or new `pendingMessageCount` sentinel instead of the chosen narrowly bounded probe barrier. These are rejected alternatives, not unfinished work; D06 remains frozen. Concrete reviewed implementation details may tighten bounds without changing architecture.
 - Outcome: D06 supersedes D03's open architecture choice and W14's alternative timing/correlation proposals. External limitations remain the D06 accepted-risk list. No owned implementation exists yet; no code needs reverting.
 
+### D08 — Adopt independent catalog and procedural plan PASS
+
+- Evidence: [catalog PLAN-REVIEW round 2](selective-upstream-catalog-plan-review-r2.md), [plan-accounting review](selective-upstream-plan-accounting-review.md), both review candidate `2e9fa03`.
+- Choice: approve P1/P2/P5 and authorize W05 only. C1–C4 are closed. Complete seven-key all-null maps for unadvertised efforts are the exact source-verified T3 v0.1.9 contract; missing/partial maps would invent five lower levels. Public diagnostics stay process-context-only; output limit and malformed whole-catalog failures are explicit.
+- Rationale: the amended contract has no remaining Fix/Replan findings and all caller/test/docs migrations are bounded. Hidden real-but-unadvertised options are the conservative tradeoff; this does not clamp explicit/role thinking options.
+- Preservation: no queue/routing/interface work in W05; shared implementation edits remain serialized. W04 remains active as overall plan-review accounting until P3/P4 prerequisites pass.
+
 ## Findings and open questions
 | ID | Triage | Status | Finding / reason |
 | --- | --- | --- | --- |
@@ -118,7 +125,7 @@ P2 is a firm candidate pending review of the clarifications below; P3/P4 remain 
 | F05 | Replan | open | OMP 18.20.0 response fitting may omit withdrawn queue text/images; AC3 must expose loss, not promise recovery of data the API discarded (D03). |
 | F06 | Replan | open | Generic atomic failure may happen after withdrawal; choose explicit indeterminate/unsupported policy without unsafe blind retries (D03). |
 | F07 | Replan | open | Validate T3's actual clear-before-abort sequencing and active-tool lifecycle/presentation before claiming runtime compatibility (W13). |
-| C1–C4 | Fix | active | Catalog plan review findings adopted in D05; independent re-review must pass before implementation. |
+| C1–C4 | Fix | closed | D05 clarifications and exact D08 contract independently pass [round-two plan review](selective-upstream-catalog-plan-review-r2.md). |
 
 
 ## Iteration log
@@ -133,3 +140,4 @@ P2 is a firm candidate pending review of the clarifications below; P3/P4 remain 
 - I08 — SYNTHESIZE → REPLAN/REVIEW: adopt source-backed catalog safeguards and process-context diagnostic boundary; choose targeted Stop probe gating based on actual client, not terminal-only assumptions. Require real installed-tool proof rather than relabel a simplified model as verified.
 - I09 — FREEZE/PLAN-REVIEW: resolve P3 architecture tie-break per mandatory anti-thrashing rule, rather than run a third replan without code. Review the chosen bounded contract; implementation stays gated on independent plan review and concrete failure-boundary acceptance.
 - I10 — JUDGE: independent safety proposal corroborates force termination, rejects EOF-only shutdown, and supplies process-closure acceptance cases. Keep the source-backed frozen barrier/token architecture; reject its unmeasured timer and incompatible correlation alternatives rather than start another design round.
+- I11 — IMPLEMENT-SLICE P2: independent plan PASS authorizes catalog/thinking implementation now. Reject waiting for unrelated Stop/routing reviews; worker must run targeted behavior/actual synthetic CLI proof, then a different worker reviews before the orchestrator's full green checkpoint.
