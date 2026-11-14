@@ -35,7 +35,7 @@ Draft pending independent planning/review; no implementation authorized yet.
 | --- | --- | --- | --- | --- |
 | W01 | research | 1–6 | active | Planning worker persists prior research and relevant contracts in `selective-upstream-integration-plan.md`. |
 | W02 | design | 1–6 | active | Planning worker drafts AC, bounded slices and corrected queue proposal; task `674d9fe3-f389-4852-ae2d-67cff74813db`. |
-| W03 | spike | 3,4 | active | Independent scratch/API worker resolves Stop/tool lifecycle; task `baa21cb2-bb18-4215-903e-6fa2a53f36d4`, evidence `selective-upstream-integration-spike.md`. |
+| W03 | spike | 3,4 | done | Source/API evidence and three abstract scratch scenarios in [spike](selective-upstream-integration-spike.md); no OMP runtime launched; runtime/order questions remain F03/F07. |
 | W04 | review | 1–6 | todo | Independent PLAN-REVIEW of firm sections and AC. |
 | W05 | impl | 1,2,5 | todo | Implement and verify session catalogs + thinking levels. |
 | W06 | review | 1,2,5 | todo | Independent catalog slice REVIEW-LOOP. |
@@ -45,6 +45,7 @@ Draft pending independent planning/review; no implementation authorized yet.
 | W10 | review | 4,5 | todo | Independent routing REVIEW-LOOP. |
 | W11 | review | 1–6 | todo | Final whole-change REVIEW-LOOP and accounting. |
 | W12 | review | 6 | todo | Rerun applicable full project gates after the last change; finalize and commit ledger. |
+| W13 | research | 3,4 | todo | Verify actual T3 Stop sequencing and safely test installed OMP active-tool lifecycle/presentation without paid calls or user plugins. |
 
 ## Decision log (append-only)
 
@@ -57,17 +58,38 @@ Draft pending independent planning/review; no implementation authorized yet.
 - Rationale: upstream changes overlap user-owned local compatibility, safety, model inheritance, and opt-out contracts; presentation changes depend on missing external plugin adaptations and alter persisted downstream data.
 - Ownership: initial `git status --short` was empty; current goal branch is `t3/review-latest-main-commits`. Existing historical checklists under `specs/004-*` and `specs/005-*` describe different goals and are not adopted or modified. No competing tracker for this goal was found in `planning_docs/`, `specs/`, `.specify/`, or `docs/goals/`.
 
-## Findings and open questions
+### D02 — Diagnostic gate isolation
 
+- Question: Can the orchestrator run bare `npm run check` without touching external user state?
+- Options: bare installed-environment diagnostic; isolated HOME/cache/config plus a controlled OMP fixture/runtime; skip the diagnostic.
+- Evidence: `bin/omp-t3:127-128` calls `setupSessionSymlink(false)`; `src/symlink.js` creates directories and `~/.pi/agent/sessions` even from diagnostic mode.
+- Choice: run the diagnostic under an isolated scratch HOME/cache/config with a controlled executable/environment; use installed OMP only when no model/network/plugin side effects are guaranteed. Do not run the bare diagnostic against the user's HOME.
+- Rationale: exercise the actual CLI surface while protecting external settings/session links. This does not weaken the required full test gate; runtime API evidence remains separately required.
+
+
+### D03 — Spike-triggered clarification before implementation
+
+- Evidence: [independent spike](selective-upstream-integration-spike.md), installed OMP 18.20.0 source. Atomic queue withdrawal may truncate restored text/drop images; generic failure can follow withdrawal, so failure is not proof that nothing happened. There is no shared Stop correlation ID in the shim-visible protocol.
+- Plan diff: keep all existing code unchanged; no owned implementation exists to remove/revert. Clarify AC3 to require loss diagnostics and deterministic bounded correlation rather than an impossible guarantee of recovering omitted data or deduplicating arbitrary delayed gestures. Resolve unsupported/indeterminate failure policy explicitly before queue implementation. Add W13 for real T3 ordering and isolated active-tool evidence; P3/P4 remain unreviewed and unknown-until.
+- Options: copy upstream's global buffering/waiter design; terminal-only barrier plus explicit generation-scoped association; require external protocol correlation. Choice pending independent plan and T3 sequencing evidence; no implementation authorized.
+- Rationale: external OMP response fitting already discards some restored information, and retries after ambiguous withdrawal can destroy user intent. These are correctness constraints, not effort-based scope reductions.
+
+## Findings and open questions
 | ID | Triage | Status | Finding / reason |
 | --- | --- | --- | --- |
 | F01 | Replan | open | Upstream queue `flushAll()` retains operations/`awaitingAbort`; a missing follow-up abort can consume a later unrelated Stop. Resolve in design before port. |
 | F02 | Replan | open | Upstream queue buffers all downstream frames while awaiting abort, including unrelated RPC responses, without a bound. Resolve ordering and lifecycle design first. |
 | F03 | Replan | open | Live-tool filtering relies on OMP lifecycle hooks and active-tool APIs. Establish supported behavior and preserve opt-out/explicit tools before replacing probes. |
 | F04 | Discard | closed | Wholesale readable-card/parent-CWD/plugin integration is outside accepted selective scope (D01), not implementation left for later. |
+| F05 | Replan | open | OMP 18.20.0 response fitting may omit withdrawn queue text/images; AC3 must expose loss, not promise recovery of data the API discarded (D03). |
+| F06 | Replan | open | Generic atomic failure may happen after withdrawal; choose explicit indeterminate/unsupported policy without unsafe blind retries (D03). |
+| F07 | Replan | open | Validate T3's actual clear-before-abort sequencing and active-tool lifecycle/presentation before claiming runtime compatibility (W13). |
+
 
 ## Iteration log
 
 - I01 — ASSESS → PLAN/RESEARCH: clean baseline, historical plans unrelated; create/commit this ledger first. Next delegate planning and independent high-impact investigation; reject immediate cherry-picks. Queue/API evidence can revise the tentative design before implementation.
 - I02 — RESEARCH/DESIGN + SPIKE in parallel: shared read-only implementation inspection, disjoint evidence files, no code edits. Independent queue proposals will be judged on ordering, liveness, lifecycle isolation, compatibility, and bounded complexity. Reject copying upstream's adapter unchanged; API/runtime evidence determines firm routing/queue sections.
 - I03 — BASELINE GATE: orchestrator ran `npm test` on the pre-implementation tree: 222 passed, 0 failed/skipped (artifact://7). `package.json` exposes test/check only, no build/typecheck/lint scripts. This establishes a green starting checkpoint, not final verification; no implementation was started while plan/API questions remain open.
+- I04 — GATE SAFETY: light inspection of diagnostic entrypoint found `--check` writes the session bridge. Choose isolated diagnostic environment (D02), reject bare real-HOME execution; no code or external settings changed.
+- I05 — EVALUATE SPIKE → REPLAN: W03 supplies source evidence and abstract proof, not a live-runtime compatibility claim. Record newly discovered truncation/indeterminate-failure constraints (D03); investigate actual client sequencing and active-tool preservation before choosing the queue/routing design.
