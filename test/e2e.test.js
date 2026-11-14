@@ -2,8 +2,30 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createProxyPipeline } = require('../src/proxy.js');
+const { createProxyPipeline: createRawPipeline } = require('../src/proxy.js');
 const { createMockStreams, collectLines } = require('./helpers.js');
+
+// Existing lifecycle/provenance scenarios use a synthetic atomic-capable OMP.
+// Queue race/failure scenarios exercise the raw pipeline in queue.test.js.
+function createProxyPipeline(options) {
+  let buffer = '';
+  options.childIn.on('data', (chunk) => {
+    buffer += chunk.toString();
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    for (const line of lines) {
+      const request = JSON.parse(line);
+      if (request.type === 'abort_and_restore_queue') queueMicrotask(() => {
+        options.childOut.write(JSON.stringify({ type: 'response', command: request.type,
+          id: request.id, success: true, data: { steering: [], followUp: [] } }) + '\n');
+      });
+    }
+  });
+  return createRawPipeline({ doctor: { observeDownstream() {}, noteSettled() {}, stop() {} }, ...options, onFatalStop: () => {
+    options.childIn.destroy();
+    options.childOut.destroy();
+  } });
+}
 
 test('E2E: Full turn lifecycle from prompt to agent_settled', async () => {
   const { stdin: clientIn, stdout: clientOut } = createMockStreams();
@@ -24,9 +46,10 @@ test('E2E: Full turn lifecycle from prompt to agent_settled', async () => {
   clientIn.write('{"type": "get_available_models", "id": "req-init"}\n');
   await new Promise((r) => setImmediate(r));
 
-  // Verify get_available_models was intercepted and NOT sent to child
-  assert.equal(childLines.lines.length, 0);
-  assert.equal(clientLines.lines.length, 1);
+  assert.deepEqual(childLines.getJson(), [{ type: 'get_available_models', id: 'req-init' }]);
+  assert.equal(clientLines.lines.length, 0);
+  childOut.write('{"type":"response","command":"get_available_models","id":"req-init","success":true,"data":{"models":[{"id":"session-model","provider":"local"}]}}\n');
+  await new Promise((r) => setImmediate(r));
   const modelResp = JSON.parse(clientLines.lines[0]);
   assert.equal(modelResp.id, 'req-init');
   assert.equal(modelResp.command, 'get_available_models');
@@ -38,8 +61,8 @@ test('E2E: Full turn lifecycle from prompt to agent_settled', async () => {
   clientIn.write(promptFrame + '\n');
   await new Promise((r) => setImmediate(r));
 
-  assert.equal(childLines.lines.length, 1);
-  assert.equal(childLines.lines[0], promptFrame);
+  assert.equal(childLines.lines.length, 2);
+  assert.equal(childLines.lines[1], promptFrame);
 
   // 3. Child OMP streams turn_start, text_delta, thinking_delta
   childOut.write('{"type": "turn_start", "turn": 1}\n');
@@ -447,7 +470,7 @@ test('E2E: interrupt with live subagents closes the task card, then cancels omp 
   const childFrames = childLines.getJson();
   const cancels = childFrames.filter((f) => f.type === 'cancel_subagent');
   assert.deepEqual(cancels.map((c) => c.subagentId).sort(), ['c0', 'c1', 'c2']);
-  const abortIdx = childFrames.findIndex((f) => f.type === 'abort');
+  const abortIdx = childFrames.findIndex((f) => f.type === 'abort_and_restore_queue');
   assert.ok(abortIdx !== -1);
   for (const c of cancels) {
     assert.ok(childFrames.indexOf(c) < abortIdx, 'cancels precede the forwarded abort');
@@ -623,7 +646,7 @@ test('E2E: parallel fleet + mid-run interrupt renders exactly the real children 
     'every observed live child is cancelled by id, including the withheld one'
   );
   for (const c of cancels) assert.ok(c.id.startsWith('ompt3-sub-'));
-  const abortIdx = childFrames.findIndex((f) => f.type === 'abort');
+  const abortIdx = childFrames.findIndex((f) => f.type === 'abort_and_restore_queue');
   for (const c of cancels) assert.ok(childFrames.indexOf(c) < abortIdx, 'cancels precede the forwarded abort');
 
   // The run settles exactly once and nothing stays running.

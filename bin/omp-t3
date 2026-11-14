@@ -2,13 +2,12 @@
 'use strict';
 
 const { parseArgs, resolveOmpPath, shimVersionInfo } = require('../src/cli.js');
-const { execFileSync, spawn } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
 const { spawnAndProxy } = require('../src/proxy.js');
 const { adaptT3ExtensionArgs, readDeferralLedger } = require('../src/extension_compat.js');
 const { setupSessionSymlink } = require('../src/symlink.js');
 const { ModelCatalogManager } = require('../src/model_catalog.js');
 const pkg = require('../package.json');
-const { createSubagentPolicy } = require('../src/subagent_policy.js');
 
 let parsed;
 try {
@@ -55,8 +54,8 @@ Commands & Flags:
   --help, -h         Show this help message
 
 Environment:
-  OMPT3_DELEGATE_TASKS=0   Restore stock OMP tools. By default native task is
-                           disabled and delegation uses T3 delegate_task.
+  OMPT3_DELEGATE_TASKS=0   Skip live-tool routing. Default lifecycle filtering
+                           removes only native task; delegate via T3 delegate_task.
   OMPT3_MAX_SUBAGENTS=<N>  Cap concurrent subagents at N: the shim injects
                            omp's task.maxConcurrency overlay (excess spawns
                            queue; the lead agent is told the limit). Unset or
@@ -65,9 +64,14 @@ Environment:
                                     Default: empty (no allowlist).
   OMPT3_SUBAGENT_DISALLOWED_MODELS  Deny rules win. Default: empty (no denylist).
   Model restrictions are opt-in: either nonempty list enables the policy,
-  requires target.model, and blocks native task. Empty/unset lists disable it.
+  checks explicit or OMP-filled models; unresolved delegates and native task block.
 
-Explicit --tools lists override tool-list injection. Opt-in model restrictions still apply.
+Explicit --tools (split/equals, even empty/invalid) disables routing, not model policy.
+Stable enabled non-task names/mounted presentation are preserved. Concurrent registry/
+mount changes can lose membership/presentation through OMP's full-selection API.
+Filter failure reports stderr; task may stay advertised but its call guard remains.
+Required hook load/registration failure refuses launch (10s registration deadline).
+One final session, no tool-list probes/retries/fallback. Not a security sandbox.
 Other flags (e.g. --session, --fork, --hide-thinking) are forwarded to omp.
 When --mode rpc is received from T3 Code, it is automatically rewritten to --mode rpc-ui.
 `);
@@ -113,11 +117,11 @@ When --mode rpc is received from T3 Code, it is automatically rewritten to --mod
     if (ompPath) {
       try {
         const mgr = new ModelCatalogManager();
-        const models = mgr.getModels(ompPath);
-        const resp = mgr.createModelResponse('check-test', ompPath);
+        const models = mgr.discoverModels(ompPath);
+        const resp = mgr.serializeModels({ id: 'check-test' }, models);
         const sizeKb = (Buffer.byteLength(resp, 'utf8') / 1024).toFixed(1);
         console.log(`[PASS] Model catalog discovery succeeded: ${models.length} models discovered.`);
-        console.log(`       Safe payload size: ${sizeKb} KB (well within 1024 KB RPC limit).`);
+        console.log(`       Bounded payload size: ${sizeKb} KB (maximum 1024 KB including newline).`);
       } catch (err) {
         console.error(`[FAIL] Model discovery error: ${err.message}`);
         hasErrors = true;
@@ -172,106 +176,17 @@ When --mode rpc is received from T3 Code, it is automatically rewritten to --mod
   case 'proxy':
   default: {
     const ompArgs = parsed.ompArgs || ['--mode', 'rpc-ui'];
-    const enforced = parsed.delegation?.injectedTools === true;
-    const launch = (args) => {
-      adaptT3ExtensionArgs(args)
-        .then(({ args: finalArgs, extensionPath }) => {
-          spawnAndProxy(finalArgs, extensionPath ? { t3ExtensionPath: extensionPath } : {});
-        })
-        .catch((err) => {
-          if (createSubagentPolicy().active) {
-            console.error(`[omp-t3] Launch refused: ${err.message}`);
-            process.exitCode = 1;
-            return;
-          }
-          console.error(`[omp-t3] Extension adaptation failed (${err && err.message ? err.message : err}); launching without it.`);
-          spawnAndProxy(args);
+    adaptT3ExtensionArgs(ompArgs)
+      .then(({ args, extensionPath }) => {
+        spawnAndProxy(args, {
+          ...(extensionPath ? { t3ExtensionPath: extensionPath } : {}),
+          requiredHook: parsed.delegation?.requiredHook
         });
-    };
-
-    if (enforced) {
-      // Only shim-injected tools are validated. User-selected tools and
-      // prompts are passed through unchanged, including on opt-out.
-      const ompPath = resolveOmpPath();
-      const args = ompArgs.slice();
-      const probeTools = () => new Promise((resolve) => {
-        const probe = spawn(ompPath, args, {
-          stdio: ['pipe', 'pipe', 'pipe'],
-          detached: process.platform !== 'win32',
-          env: { ...process.env, PI_CODING_AGENT_DIR: require('node:path').join(require('node:os').homedir(), '.omp', 'agent') }
-        });
-        let stderr = '';
-        let result = null;
-        const killProbe = (signal = 'SIGKILL') => {
-          try {
-            if (process.platform === 'win32') probe.kill(signal);
-            else if (probe.pid) process.kill(-probe.pid, signal);
-          } catch (err) {
-            if (err.code !== 'ESRCH') console.error(`[omp-t3] Probe cleanup failed: ${err.message}`);
-          }
-        };
-        const signalHandlers = new Map();
-        for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
-          const handler = () => {
-            killProbe();
-            for (const [sig, fn] of signalHandlers) process.removeListener(sig, fn);
-            process.kill(process.pid, signal);
-          };
-          signalHandlers.set(signal, handler);
-          process.once(signal, handler);
-        }
-        const timer = setTimeout(() => {
-          result = { ok: false, error: 'validation timed out before ready' };
-          killProbe();
-        }, 5000);
-        const lines = require('node:readline').createInterface({ input: probe.stdout });
-        lines.on('line', (line) => {
-          try {
-            if (!result && JSON.parse(line).type === 'ready') {
-              result = { ok: true };
-              clearTimeout(timer);
-              killProbe();
-            }
-          } catch { /* Startup logs need not be JSON. */ }
-        });
-        probe.stderr.on('data', (data) => { stderr = (stderr + data).slice(-65536); });
-        probe.once('error', (err) => { result = { ok: false, error: err.message }; });
-        probe.once('close', (code, signal) => {
-          clearTimeout(timer);
-          lines.close();
-          killProbe();
-          for (const [sig, fn] of signalHandlers) process.removeListener(sig, fn);
-          resolve(result || { ok: false, error: stderr || `exited before ready (${signal || code})` });
-        });
+      })
+      .catch((err) => {
+        console.error(`[omp-t3] Launch refused: ${err.message}`);
+        process.exitCode = 1;
       });
-      (async () => {
-        let reason = 'tool validation did not converge';
-        for (let round = 0; round < 5; round++) {
-          const result = await probeTools();
-          if (result.ok) {
-            launch(args);
-            return;
-          }
-          reason = result.error;
-          const match = reason.match(/(?:Unknown tools? in --tools|unavailable in this session): ([^\n]+)/);
-          if (!match) break;
-          const rejected = match[1].split(',').map((s) => s.trim().replace(/\.$/, ''));
-          const idx = args.indexOf('--tools');
-          const current = args[idx + 1].split(',');
-          const kept = current.filter((name) => !rejected.includes(name));
-          if (!kept.length || kept.length === current.length) break;
-          args[idx + 1] = kept.join(',');
-        }
-        const shown = reason.split('\n')[0].replace(/[\u0000-\u001f\u007f]/g, '?');
-        console.error(`[omp-t3] Delegation enforcement degraded: ${shown}. Launching with stock tooling and the original user arguments.`);
-        launch(parsed.delegation.fallbackArgs);
-      })().catch((err) => {
-        console.error(`[omp-t3] Delegation validation failed: ${err.message}. Launching with the original user arguments.`);
-        launch(parsed.delegation.fallbackArgs);
-      });
-    } else {
-      launch(ompArgs);
-    }
     break;
   }
 }

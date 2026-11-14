@@ -92,6 +92,9 @@ class SettlementTracker {
     if (/"type":\s*"prompt"/.test(line)) {
       this.lastPromptStatus = null;
       this.sawCycleThisTurn = false;
+      this.sawAbort = false;
+      this.cycleActive = false;
+      this.settledThisCycle = false;
     } else if (/"type":\s*"abort(_and_prompt)?"/.test(line)) {
       this.lastPromptStatus = 'aborted';
       this.sawAbort = true;
@@ -171,6 +174,17 @@ class SettlementTracker {
     return { handled: true, emit: JSON.stringify(end) + '\n' + line + '\n' };
   }
 
+  // Shared by command-labeled responses and actual state-request destinations.
+  projectStateResponse(parsed) {
+    if (parsed.type !== 'response' || parsed.success !== true || !parsed.data ||
+        typeof parsed.data !== 'object' || typeof parsed.data.queuedMessageCount !== 'number' ||
+        parsed.data.pendingMessageCount !== undefined) return null;
+    parsed.data.pendingMessageCount =
+      parsed.data.queuedMessageCount + (parsed.data.hasPendingAsyncWork === true ? 1 : 0);
+    if (parsed.data.hasPendingAsyncWork === true) this.tickHoldOpen();
+    return JSON.stringify(parsed) + '\n';
+  }
+
   /**
    * Inspects downstream frames (OMP -> T3 Code) for settlement events.
    * @param {string} line Raw line emitted by OMP
@@ -199,7 +213,7 @@ class SettlementTracker {
         this.cycleActive = true;
         this.sawCycleThisTurn = true;
         this.settledThisCycle = false;
-        this.sawAbort = false;
+        this.sawAbort = typeof this.abortPending === 'function' && this.abortPending();
         return { handled: false };
       }
       if (parsed && parsed.type === 'agent_end' && this.cycleActive) {
@@ -331,24 +345,8 @@ class SettlementTracker {
     if (line.includes('"command":"get_state"') || line.includes('"command": "get_state"')) {
       try {
         const parsed = JSON.parse(line);
-        if (
-          parsed.type === 'response' &&
-          parsed.success === true &&
-          parsed.data &&
-          typeof parsed.data === 'object' &&
-          typeof parsed.data.queuedMessageCount === 'number' &&
-          parsed.data.pendingMessageCount === undefined
-        ) {
-          parsed.data.pendingMessageCount =
-            parsed.data.queuedMessageCount + (parsed.data.hasPendingAsyncWork === true ? 1 : 0);
-          // T3's settle probe is the recurring proof that async work is still
-          // pending mid-run; refresh the hold-open signature from it too (the
-          // subagent count may have become known since prompt_result).
-          if (parsed.data.hasPendingAsyncWork === true) {
-            this.tickHoldOpen();
-          }
-          return { handled: true, emit: JSON.stringify(parsed) + '\n' };
-        }
+        const projected = this.projectStateResponse(parsed);
+        if (projected) return { handled: true, emit: projected };
       } catch {
         // Fall through to passthrough
       }
@@ -422,6 +420,18 @@ class SettlementTracker {
   }
 }
 
+// Explicit output records are the proxy's only emission contract. A tracker
+// batch may contain a prompt response or agent_end prefix followed by a settle;
+// the prefix must never be retained with its terminal suffix.
+function outputRecords(batch) {
+  return batch.split('\n').filter((line) => line.length > 0).map((line) => {
+    let frame;
+    try { frame = JSON.parse(line); } catch { frame = null; }
+    return { frame, line: line + '\n', terminal: frame?.type === 'agent_settled' };
+  });
+}
+
 module.exports = {
-  SettlementTracker
+  SettlementTracker,
+  outputRecords
 };

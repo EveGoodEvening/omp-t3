@@ -10,6 +10,8 @@ test('Proxy pipeline forwards extension_ui_request downstream and extension_ui_r
   const { stdin: childIn, stdout: childOut } = createMockStreams();
 
   const pipeline = createProxyPipeline({
+    doctor: { observeDownstream() {}, noteSettled() {}, stop() {} },
+    onFatalStop() { childIn.destroy(); childOut.destroy(); },
     clientIn,
     clientOut,
     childIn,

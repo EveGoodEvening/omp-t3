@@ -40,8 +40,8 @@ function saveState(state) {
  * Watches the OMP<->T3 contract at runtime. On every cleanly settled turn it
  * records the running OMP/shim versions as "last known good". If OMP breaks a
  * contract promise (e.g. stops emitting session_settled after announcing it),
- * or model discovery dies, it tells the user which side changed and how to
- * roll back, and files a rate-limited GitHub issue with a sanitized payload.
+ * it tells the user which side changed and how to roll back, and files a
+ * rate-limited GitHub issue with a sanitized payload.
  */
 class ContractDoctor {
 
@@ -113,7 +113,10 @@ class ContractDoctor {
         if (parsed.type === 'prompt_result' && parsed.agentInvoked === true && parsed.sessionSettled === true) {
           this.pendingSettle = { status: parsed.status || 'completed' };
           clearTimeout(this.settleTimer);
-          this.settleTimer = setTimeout(() => this.onSettleWatchdog(), this.watchdogMs);
+          const pending = this.pendingSettle;
+          this.settleTimer = setTimeout(() => {
+            if (this.pendingSettle === pending) this.onSettleWatchdog();
+          }, this.watchdogMs);
         }
       } catch {
         // Ignore parse failures here; settlement.js owns the frame
@@ -140,22 +143,6 @@ class ContractDoctor {
     const settleLine = JSON.stringify({ type: 'agent_settled', aborted: status === 'aborted' }) + '\n';
     if (typeof this.onSynth === 'function') this.onSynth(settleLine);
     return settleLine;
-  }
-
-  /**
-   * Reports a model-discovery contract failure (omp models --json shape or
-   * exit changed). Called from the model catalog path.
-   * @param {Error} err
-   */
-  reportDiscoveryFailure(err) {
-    const reason = (err && (err.code || err.name)) || 'unknown';
-    this.report({
-      signature: `discovery-failed:${this.currentOmpVersion() || 'unknown'}:${reason}`,
-      side: 'omp',
-      title: `Model discovery failed with OMP ${this.currentOmpVersion() || '?'}`,
-      detail: `omp models --json no longer produces the catalog shape omp-t3 translates (${err && err.message ? err.message : reason}). T3's model selector will fall back to custom models only.`,
-      sample: { error: String((err && err.message) || reason).slice(0, 300) }
-    });
   }
 
   /**
@@ -250,6 +237,7 @@ class ContractDoctor {
   stop() {
     clearTimeout(this.settleTimer);
     this.settleTimer = null;
+    this.pendingSettle = null;
   }
 }
 

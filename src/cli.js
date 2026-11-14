@@ -9,20 +9,6 @@ const pkg = require('../package.json');
 const { createSubagentPolicy, subagentPolicyArgs } = require('./subagent_policy.js');
 
 /**
- * Built-in tools enabled for T3-mediated sessions when delegation
- * enforcement is on (default): the host-valid subset of omp's built-in
- * registry MINUS `task` — the in-process subagent spawner. Derived per
- * launch by the bin/omp-t3 pre-flight prune loop (omp's validator names
- * exactly which entries are unknown/unavailable on the running host), so
- * host and version differences self-correct. Setup-gated plugins (python,
- * notebook, browser, computer) are never in the registry.
- */
-const DEFAULT_TOOLS = [
-  'read', 'bash', 'edit', 'write', 'grep', 'glob', 'lsp', 'ast_edit',
-  'ask', 'debug', 'eval', 'find', 'wait', 'todo', 'web_search'
-];
-
-/**
  * System-prompt appendix injected with delegation enforcement: routes
  * subagent-shaped work to T3's delegate_task MCP tool (isolated, openable
  * child threads) instead of the removed in-process path.
@@ -92,7 +78,8 @@ function parseArgs(argv) {
   // Rewrite arguments for OMP execution
   const rewritten = [];
   let modeFound = false;
-  let toolsFound = false;
+  const routingEnabled = process.env.OMPT3_DELEGATE_TASKS !== '0' &&
+    !argv.some(arg => arg === '--tools' || arg.startsWith('--tools='));
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -119,11 +106,10 @@ function parseArgs(argv) {
       rewritten.push('--mode=rpc-ui');
     } else if (arg === '--tools' || arg.startsWith('--tools=')) {
       // An explicit tools list wins: the user scoped the toolset, we keep it.
-      toolsFound = true;
       rewritten.push(arg);
       if (arg === '--tools' && i + 1 < argv.length) rewritten.push(argv[++i]);
     } else if (arg === '--append-system-prompt' || arg.startsWith('--append-system-prompt=')) {
-      // Preserve the original appendix for opt-out and validation fallback.
+      // Preserve the caller's appendix.
       if (arg === '--append-system-prompt') {
         rewritten.push(arg);
         if (i + 1 < argv.length) rewritten.push(argv[++i]);
@@ -140,34 +126,21 @@ function parseArgs(argv) {
     rewritten.unshift('--mode', 'rpc-ui');
   }
 
-  // Delegate-enforcement (default on; OMPT3_DELEGATE_TASKS=0 opts out).
-  // T3-mediated sessions must not spawn in-process subagents: the native
-  // `task` tool is removed from the enabled set and the routing policy is
-  // appended to the system prompt, so delegated/subagent work goes through
-  // T3's delegate_task MCP tool (isolated, openable child threads). See
-  // README "Delegation enforcement".
-  // Model restrictions are independent of delegation routing, explicit tool
-  // lists, and readiness fallback. Keep them on every launch path.
+  // Routing is captured from original launch intent, independently of policy.
   const modelPolicy = createSubagentPolicy();
   appendSystemPrompt(rewritten, modelPolicy.prompt);
-  rewritten.push(...subagentPolicyArgs(modelPolicy));
-  const fallbackArgs = rewritten.slice();
-  const injectedTools = process.env.OMPT3_DELEGATE_TASKS !== '0' && !toolsFound;
-  if (injectedTools) {
-    rewritten.push('--tools', DEFAULT_TOOLS.join(','));
-    appendSystemPrompt(rewritten, DELEGATION_POLICY);
-  }
+  if (routingEnabled) appendSystemPrompt(rewritten, DELEGATION_POLICY);
+  const hook = subagentPolicyArgs(modelPolicy, routingEnabled);
+  rewritten.push(...hook.args);
 
-  // Opt-in subagent concurrency cap (OMPT3_MAX_SUBAGENTS). Without the env
-  // var this adds nothing to either launch path.
+  // Opt-in native concurrency overlay on the sole final launch.
   const capArgs = subagentCapArgs(process.env.OMPT3_MAX_SUBAGENTS);
   rewritten.push(...capArgs);
-  fallbackArgs.push(...capArgs);
 
   return {
     action: 'proxy',
     ompArgs: rewritten,
-    delegation: { injectedTools, fallbackArgs }
+    delegation: { routingEnabled, requiredHook: hook.requiredHook }
   };
 }
 
@@ -295,6 +268,5 @@ module.exports = {
   shimVersionInfo,
   subagentOverlayPath,
   subagentCapArgs,
-  DEFAULT_TOOLS,
   DELEGATION_POLICY
 };

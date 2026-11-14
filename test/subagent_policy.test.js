@@ -8,6 +8,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { createSubagentPolicy, subagentPolicyArgs } = require('../src/subagent_policy.js');
 const { adaptT3ExtensionArgs, GET_COMMANDS_MARKER, MCP_CLIENT_MARKER } = require('../src/extension_compat.js');
+const { loadHook } = require('./generated-hook.js');
 
 const policyEnv = {
   OMPT3_SUBAGENT_ALLOWED_MODELS: 'glm-5.3-flash,gemini-3.8-flash,deepseek-v4.1-flash',
@@ -53,7 +54,7 @@ test('each env list is independent, globs are anchored, and denial wins', () => 
   assert.equal(off.checkTool('task', {}), null);
   assert.equal(off.checkTool('delegate_task', {}), null);
   assert.equal(off.prompt, '');
-  assert.deepEqual(subagentPolicyArgs(off), []);
+  assert.deepEqual(subagentPolicyArgs(off), { args: [], requiredHook: undefined });
 });
 
 test('unset model lists do not block native tasks or delegation', () => {
@@ -93,15 +94,13 @@ test('generated extension registers a blocking OMP hook and reads each session e
   const previous = process.env.XDG_CACHE_HOME;
   process.env.XDG_CACHE_HOME = dir;
   try {
-    const args = subagentPolicyArgs(createSubagentPolicy(policyEnv));
-    const source = fs.readFileSync(args[1], 'utf8');
+    const { args } = subagentPolicyArgs(createSubagentPolicy(policyEnv));
     const mtime = fs.statSync(args[1]).mtimeMs;
     subagentPolicyArgs(createSubagentPolicy(policyEnv));
     assert.equal(fs.statSync(args[1]).mtimeMs, mtime);
     for (const env of [policyEnv, { OMPT3_SUBAGENT_ALLOWED_MODELS: 'custom-model', OMPT3_SUBAGENT_DISALLOWED_MODELS: '' }]) {
-      let hook;
-      const context = { process: { env }, pi: { on: (name, fn) => { assert.equal(name, 'tool_call'); hook = fn; } } };
-      vm.runInNewContext(source.replace('export default function', 'function') + '\nompT3SubagentPolicy(pi);', context);
+      const handlers = loadHook(args[1], env);
+      const hook = handlers.get('tool_call');
       assert.equal(hook({ toolName: 'task', input: {} }).block, true);
       const model = env === policyEnv ? 'glm-5.3-flash' : 'custom-model';
       assert.equal(hook({ toolName: 'mcp__t3_code__delegate_task', input: { target: { model } } }), undefined);
@@ -175,4 +174,79 @@ test('enforcement refuses drift, unreadable source and an unwritable cache; skil
   assert.match(fs.readFileSync(options.cachePath, 'utf8'), /ompt3SubagentPolicy.checkTool/);
   fs.writeFileSync(original, bridgeFixture());
   await assert.rejects(adaptT3ExtensionArgs(['--extension', original], { ...options, cachePath: path.join(original, 'compat.ts') }), /cannot write T3 extension/);
+});
+
+test('generated routing hooks await latest selections, skip absent task and retain guard', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ompt3-live-routing-'));
+  const previous = process.env.XDG_CACHE_HOME;
+  process.env.XDG_CACHE_HOME = dir;
+  t.after(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+    if (previous === undefined) delete process.env.XDG_CACHE_HOME;
+    else process.env.XDG_CACHE_HOME = previous;
+  });
+  const off = createSubagentPolicy({});
+  const file = subagentPolicyArgs(off, true).args[1];
+  let names, calls = 0, release;
+  const handlers = loadHook(file, {}, {
+    getActiveTools: () => names,
+    setActiveTools: next => {
+      calls++;
+      names = next;
+      return new Promise(resolve => { release = resolve; });
+    }
+  });
+  for (const event of ['session_start', 'session_tree', 'before_agent_start']) {
+    // Represents an earlier serial handler selecting a new enabled subset.
+    names = ['read', 'task', 'task_extra', 'custom_' + event, 'mcp__fixture__tool'];
+    const expected = names.filter(n => n !== 'task');
+    let done = false;
+    const pending = handlers.get(event)().then(() => { done = true; });
+    assert.deepEqual(Array.from(names), expected);
+    await Promise.resolve();
+    assert.equal(done, false, 'lifecycle waits for the setter');
+    release();
+    await pending;
+    const count = calls;
+    await handlers.get(event)();
+    assert.equal(calls, count, 'already absent means no setter invocation');
+  }
+  names.push('task');
+  const guard = handlers.get('tool_call');
+  assert.equal(guard({ toolName: 'task', input: {} }).block, true);
+  assert.equal(guard({ toolName: 'task_extra', input: {} }), undefined);
+  assert.equal(guard({ toolName: 'custom', input: {} }), undefined);
+  // Routing is captured by content, not subsequent environment changes.
+  const unchanged = subagentPolicyArgs(off, true).args[1];
+  assert.equal(unchanged, file);
+  const policyOnly = subagentPolicyArgs(createSubagentPolicy(policyEnv), false).args[1];
+  assert.notEqual(policyOnly, file);
+});
+
+test('filter API failures diagnose headlessly without losing the task guard', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ompt3-routing-errors-'));
+  const previous = process.env.XDG_CACHE_HOME;
+  process.env.XDG_CACHE_HOME = dir;
+  t.after(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+    if (previous === undefined) delete process.env.XDG_CACHE_HOME;
+    else process.env.XDG_CACHE_HOME = previous;
+  });
+  const file = subagentPolicyArgs(createSubagentPolicy({}), true).args[1];
+  for (const api of [
+    {},
+    { getActiveTools() { throw Error('getter'); }, setActiveTools() {} },
+    { getActiveTools: () => ['task'], setActiveTools() { throw Error('setter'); } },
+    { getActiveTools: () => ['task'], setActiveTools: async () => { throw Error('rejected'); } }
+  ]) {
+    const diagnostics = [];
+    const handlers = loadHook(file, {}, api, diagnostics);
+    for (const event of ['session_start', 'session_tree', 'before_agent_start']) {
+      const count = diagnostics.length;
+      await handlers.get(event)();
+      assert(diagnostics.length > count, 'failure must be visible without UI');
+      assert.equal(handlers.get('tool_call')({ toolName: 'task', input: {} }).block, true);
+      assert.equal(handlers.get('tool_call')({ toolName: 'task_extra', input: {} }), undefined);
+    }
+  }
 });

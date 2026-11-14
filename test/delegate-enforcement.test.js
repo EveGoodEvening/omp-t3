@@ -1,114 +1,70 @@
 'use strict';
-
 const test = require('node:test');
 const assert = require('node:assert/strict');
-
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { parseArgs } = require('../src/cli.js');
+const { loadHook } = require('./generated-hook.js');
 
-// These scenarios exercise explicitly enabled model restrictions.
-process.env.OMPT3_SUBAGENT_ALLOWED_MODELS = 'glm-5.3-flash';
-process.env.OMPT3_SUBAGENT_DISALLOWED_MODELS = 'gpt-*sol*,*opus*';
+const cache = fs.mkdtempSync(path.join(os.tmpdir(), 'ompt3-routing-table-'));
+process.env.XDG_CACHE_HOME = cache;
+process.env.OMPT3_MAX_SUBAGENTS = '';
+test.after(() => fs.rmSync(cache, { recursive: true, force: true }));
 
-// --- Delegation enforcement (default on; OMPT3_DELEGATE_TASKS=0 opts out) ---
-
-test('enforcement: default launch injects the task-free tools list and the policy', () => {
-  const { ompArgs } = parseArgs(['--mode', 'rpc']);
-  const toolsIdx = ompArgs.indexOf('--tools');
-  assert.notEqual(toolsIdx, -1, '--tools injected');
-  const list = ompArgs[toolsIdx + 1].split(',');
-  assert.equal(list.includes('task'), false, 'native task tool removed');
-  assert.equal(list.includes('computer'), false, 'computer stays at its omp default (off)');
-  for (const t of ['read', 'bash', 'edit', 'write', 'grep', 'glob', 'todo', 'web_search']) {
-    assert.equal(list.includes(t), true, `${t} stays enabled`);
-  }
-  const policyIdx = ompArgs.indexOf('--append-system-prompt');
-  assert.notEqual(policyIdx, -1, 'policy appended');
-  assert.ok(ompArgs[policyIdx + 1].includes('delegate_task'), 'policy routes to delegate_task');
-});
-
-test('enforcement: routing opt-out keeps model restrictions active', () => {
-  process.env.OMPT3_DELEGATE_TASKS = '0';
-  try {
-    const { ompArgs } = parseArgs(['--mode', 'rpc', '--session', 'abc']);
-    assert.deepEqual(ompArgs.slice(0, 4), ['--mode', 'rpc-ui', '--session', 'abc']);
-    assert.ok(ompArgs.some(arg => arg.includes('Subagent model policy')));
-    assert.ok(!ompArgs.some(arg => arg.includes('Delegation policy')));
-    assert.ok(ompArgs.includes('--extension'));
-    assert.ok(!ompArgs.includes('--tools'));
-  } finally {
-    delete process.env.OMPT3_DELEGATE_TASKS;
-  }
-});
-
-test('enforcement: an explicit --tools list wins over the injected one', () => {
-  const { ompArgs } = parseArgs(['--tools', 'read,bash', '--mode', 'rpc']);
-  const lists = ompArgs.filter((a) => a === 'read,bash');
-  assert.equal(lists.length, 1, 'user list kept, no injected list');
-  assert.equal(ompArgs.includes('read,bash,edit,write,grep,glob,lsp,python,notebook,browser,todo,web_search,ask'), false);
-});
-
-test('enforcement: --tools=<value> form also suppresses injection', () => {
-  const { ompArgs } = parseArgs(['--tools=read', '--mode', 'rpc']);
-  const toolFlags = ompArgs.filter((a) => a.startsWith('--tools'));
-  assert.equal(toolFlags.length, 1, 'exactly one tools flag');
-  assert.equal(toolFlags[0], '--tools=read', 'user list kept verbatim');
-});
-
-test('enforcement: a user appendix is preserved and the policy is merged into one flag', () => {
-  const { ompArgs } = parseArgs(['--append-system-prompt', 'be terse', '--mode', 'rpc']);
-  const idx = ompArgs.indexOf('--append-system-prompt');
-  assert.notEqual(idx, -1);
-  const value = ompArgs[idx + 1];
-  assert.ok(value.startsWith('be terse'), 'user appendix first');
-  assert.ok(value.includes('Delegation policy'), 'policy merged after it');
-  assert.equal(ompArgs.filter((a) => a === '--append-system-prompt').length, 1, 'single flag');
-});
-
-test('enforcement: --append-system-prompt=<value> form is merged too', () => {
-  const { ompArgs } = parseArgs(['--append-system-prompt=be terse', '--mode', 'rpc']);
-  const prompts = ompArgs.filter((a) => a.startsWith('--append-system-prompt'));
-  assert.equal(prompts.length, 1, 'exactly one appendix flag');
-  const value = prompts[0].slice('--append-system-prompt='.length);
-  assert.ok(value.startsWith('be terse'), 'user appendix preserved');
-  assert.ok(value.includes('Delegation policy'), 'policy merged');
-});
-
-test('enforcement: composes with the concurrency cap and mode rewrite', () => {
-  process.env.OMPT3_MAX_SUBAGENTS = '5';
-  try {
-    const { ompArgs } = parseArgs(['--mode', 'rpc']);
-    assert.ok(ompArgs.includes('--config'), 'cap overlay still injected');
-    assert.ok(ompArgs.includes('--tools'), 'tools list still injected');
-    assert.ok(ompArgs.includes('--append-system-prompt'), 'policy still injected');
-  } finally {
-    delete process.env.OMPT3_MAX_SUBAGENTS;
-  }
-});
-
-
-test('enforcement: routing opt-out preserves user appendices and adds model policy in both forms', () => {
-  process.env.OMPT3_DELEGATE_TASKS = '0';
-  try {
-    for (const flags of [['--append-system-prompt','USER RULE'],['--append-system-prompt=USER RULE']]) {
-      const {ompArgs, delegation}=parseArgs(['--mode','rpc',...flags]);
-      assert.ok(ompArgs.some(arg => arg.includes('USER RULE') && arg.includes('Subagent model policy')));
-      assert.ok(!ompArgs.some(arg => arg.includes('Delegation policy')));
-      assert.equal(delegation.injectedTools,false);
+for (const routing of [undefined, '0']) {
+  for (const explicit of [[], ['--tools', 'task,custom'], ['--tools=task,custom']]) {
+    for (const policy of [false, true]) {
+      test(`routing table env=${routing} tools=${explicit[0]} policy=${policy}`, async () => {
+        if (routing === undefined) delete process.env.OMPT3_DELEGATE_TASKS;
+        else process.env.OMPT3_DELEGATE_TASKS = routing;
+        process.env.OMPT3_SUBAGENT_ALLOWED_MODELS = policy ? 'allowed' : '';
+        process.env.OMPT3_SUBAGENT_DISALLOWED_MODELS = '';
+        const user = ['--extension', '/user/extension.ts', '--session', 'session.jsonl', ...explicit];
+        const { ompArgs, delegation } = parseArgs(user);
+        const enabled = routing !== '0' && explicit.length === 0;
+        assert.equal(delegation.routingEnabled, enabled);
+        assert.deepEqual(ompArgs.slice(2, 2 + user.length), user);
+        assert.deepEqual(ompArgs.filter(a => a === '--tools' || a.startsWith('--tools=')), explicit.length ? [explicit[0]] : []);
+        assert.equal(ompArgs.some(a => a.includes('T3 `delegate_task`')), enabled);
+        let names = ['read', 'task', 'custom', 'task_extra'];
+        let writes = 0;
+        const generated = delegation.requiredHook ? ompArgs.at(-1) : null;
+        const handlers = generated ? loadHook(generated, { ...process.env }, {
+          getActiveTools: () => names,
+          setActiveTools: async n => { writes++; names = n; }
+        }) : new Map();
+        await handlers.get('session_start')?.();
+        assert.equal(writes, enabled ? 1 : 0);
+        assert.deepEqual(Array.from(names), enabled ? ['read', 'custom', 'task_extra'] : ['read', 'task', 'custom', 'task_extra']);
+        assert.equal(handlers.get('tool_call')?.({ toolName: 'task', input: {} })?.block === true, enabled || policy);
+        assert.equal(handlers.get('tool_call')?.({ toolName: 'task_extra', input: {} }), undefined);
+      });
     }
-  } finally { delete process.env.OMPT3_DELEGATE_TASKS; }
+  }
+}
+
+test('nonzero routing and both appendices retain session/cap on the final argv', () => {
+  process.env.OMPT3_DELEGATE_TASKS = 'yes';
+  process.env.OMPT3_SUBAGENT_ALLOWED_MODELS = '';
+  process.env.OMPT3_MAX_SUBAGENTS = '2';
+  try {
+    for (const appendix of [['--append-system-prompt', 'USER RULE'], ['--append-system-prompt=USER RULE']]) {
+      const { ompArgs, delegation } = parseArgs(['--session', 's.jsonl', '--fork', ...appendix]);
+      assert.equal(delegation.routingEnabled, true);
+      assert.deepEqual(ompArgs.slice(2, 5), ['--session', 's.jsonl', '--fork']);
+      assert(ompArgs.some(a => a.startsWith('USER RULE\n\n') || a.startsWith('--append-system-prompt=USER RULE\n\n')));
+      const config = ompArgs[ompArgs.indexOf('--config') + 1];
+      assert.match(fs.readFileSync(config, 'utf8'), /\bmaxConcurrency:\s+2\b/);
+    }
+  } finally { process.env.OMPT3_MAX_SUBAGENTS = ''; }
 });
 
-test('enforcement: fallback keeps user prompt, session flags and cap overlay', () => {
-  process.env.OMPT3_MAX_SUBAGENTS='2';
-  try {
-    const {ompArgs,delegation}=parseArgs(['--mode','rpc','--session','session.jsonl','--append-system-prompt','USER RULE']);
-    assert.equal(delegation.injectedTools,true);
-    assert.ok(ompArgs.some(a=>a.includes('Delegation policy')));
-    assert.deepEqual(delegation.fallbackArgs.slice(0,5),['--mode','rpc-ui','--session','session.jsonl','--append-system-prompt']);
-    assert.ok(delegation.fallbackArgs[5].startsWith('USER RULE\n\n'));
-    assert.ok(delegation.fallbackArgs[5].includes('Subagent model policy'));
-    assert.ok(!delegation.fallbackArgs[5].includes('Delegation policy'));
-    assert.deepEqual(delegation.fallbackArgs.slice(-2),ompArgs.slice(-2));
-    assert.equal(delegation.fallbackArgs.at(-2),'--config');
-  } finally { delete process.env.OMPT3_MAX_SUBAGENTS; }
+test('empty and malformed explicit tools stay explicit in both spellings', () => {
+  process.env.OMPT3_DELEGATE_TASKS = '1';
+  for (const flags of [['--tools'], ['--tools', ''], ['--tools='], ['--tools', 'missing,task'], ['--tools=missing,task']]) {
+    const result = parseArgs(flags);
+    assert.equal(result.delegation.routingEnabled, false);
+    assert.deepEqual(result.ompArgs.slice(2), flags);
+  }
 });

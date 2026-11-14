@@ -71,18 +71,30 @@ function policyRuntimeSource() {
   return `const ompt3SubagentPolicy = (${createSubagentPolicy.toString()})(process.env);`;
 }
 
-// A separate hook also covers native task and configured MCP aliases, even if
-// the launch has no bundled T3 bridge. Content-keyed paths avoid concurrent
-// installations overwriting an extension that another session is loading.
-function subagentPolicyArgs(policy) {
-  if (!policy.active) return [];
-  const source = [
+// One content-keyed hook covers routing and independent opt-in model policy.
+function subagentPolicyArgs(policy, routingEnabled = false) {
+  if (!policy.active && !routingEnabled) return { args: [], requiredHook: undefined };
+  const template = [
+    'import { writeSync } from "node:fs";',
     policyRuntimeSource(),
+    `const routingEnabled = ${routingEnabled};`,
     'export default function ompT3SubagentPolicy(pi) {',
+    ' try {',
     // Check the model the T3 bridge will send: it fills an omitted
     // delegate_task model from OMP settings before calling MCP.
     `  ${delegateModelsRuntimeSource('pi')}`,
+    '  if (routingEnabled) {',
+    '    const filter = async () => {',
+    '      try {',
+    '        if (typeof pi.getActiveTools !== "function" || typeof pi.setActiveTools !== "function") throw Error("active-tool API unavailable");',
+    '        const names = pi.getActiveTools();',
+    '        if (names.includes("task")) await pi.setActiveTools(names.filter(name => name !== "task"));',
+    '      } catch (error) { console.error("[omp-t3] Native task filtering failed; call guard retained:", error); }',
+    '    };',
+    '    for (const event of ["session_start", "session_tree", "before_agent_start"]) pi.on(event, filter);',
+    '  }',
     '  pi.on("tool_call", (event) => {',
+    '    if (routingEnabled && event.toolName === "task") return { block: true, reason: "Native task is routed to T3 delegate_task." };',
     // Send what was checked: without the adapted bridge nothing else fills
     // the model, and an approved fill must not degrade to parent inheritance.
     '    const input = ompt3DelegateModels.apply(event.toolName, event.input);',
@@ -90,8 +102,17 @@ function subagentPolicyArgs(policy) {
     '    if (reason) return { block: true, reason };',
     '    if (input !== event.input) return { input };',
     '  });',
+    '  if (process.env.OMPT3_HOOK_REGISTRATION === "__OMPT3_CONTRACT__") writeSync(3, JSON.stringify({ contract: "__OMPT3_CONTRACT__" }) + "\\n");',
+    ' } catch (error) {',
+    '  console.error("[omp-t3] Launch refused: required hook registration failed:", error);',
+    '  process.exit(1);',
+    ' }',
     '}'
   ].join('\n');
+  // Contract identity hashes the canonical source before embedding its digest.
+  // The cache filename independently hashes the final source as before.
+  const identity = crypto.createHash('sha256').update(template).digest('hex');
+  const source = template.replaceAll('__OMPT3_CONTRACT__', identity);
   const hash = crypto.createHash('sha256').update(source).digest('hex').slice(0, 16);
   const cacheDir = process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache');
   const file = path.join(cacheDir, 'omp-t3', `subagent-policy-${hash}.ts`);
@@ -105,7 +126,7 @@ function subagentPolicyArgs(policy) {
       fs.rmSync(tmp, { force: true });
     }
   }
-  return ['--extension', file];
+  return { args: ['--extension', file], requiredHook: { file, identity } };
 }
 
 module.exports = { createSubagentPolicy, policyRuntimeSource, subagentPolicyArgs };
