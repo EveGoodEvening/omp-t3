@@ -11,12 +11,19 @@ function withTempStateHome(fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-t3-state-'));
   const original = process.env.XDG_STATE_HOME;
   process.env.XDG_STATE_HOME = dir;
-  try {
-    return fn(dir);
-  } finally {
+  const cleanup = () => {
     if (original === undefined) delete process.env.XDG_STATE_HOME;
     else process.env.XDG_STATE_HOME = original;
     fs.rmSync(dir, { recursive: true, force: true });
+  };
+  try {
+    const result = fn(dir);
+    if (result && typeof result.then === 'function') return result.finally(cleanup);
+    cleanup();
+    return result;
+  } catch (error) {
+    cleanup();
+    throw error;
   }
 }
 
@@ -141,5 +148,28 @@ test('drift notice shares the 24h rate-limit ledger (option passes only from the
     } finally {
       process.stderr.write = original;
     }
+  });
+});
+
+test('retired watchdog callback cannot settle a new prompt or disposed transport', () => {
+  withTempStateHome(() => {
+  const scheduled = [];
+  const original = global.setTimeout;
+  global.setTimeout = (fn) => { scheduled.push(fn); return null; };
+  try {
+    const doctor = new ContractDoctor({ ompVersion: 'synthetic', issuesEnabled: false });
+    const frames = [];
+    doctor.onSynth = (s) => frames.push(s);
+    doctor.onNotice = (s) => frames.push(s);
+    const announcement = '{"type":"prompt_result","agentInvoked":true,"sessionSettled":true}';
+    doctor.observeDownstream(announcement);
+    doctor.stop();
+    doctor.observeDownstream(announcement);
+    scheduled[0]();
+    assert.deepEqual(frames, [], 'old callback must not settle the replacement turn');
+    doctor.stop();
+    scheduled[1]();
+    assert.deepEqual(frames, [], 'disposed callback must not emit notice or settle');
+  } finally { global.setTimeout = original; }
   });
 });

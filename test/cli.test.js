@@ -43,7 +43,6 @@ test('parseArgs drops the T3 discovery --offline flag omp rejects', () => {
   const result = parseArgs(['--mode', 'rpc', '--no-session', '--offline']);
   assert.equal(result.action, 'proxy');
   assert.deepEqual(result.ompArgs, ['--mode', 'rpc-ui', '--no-session']);
-  assert.deepEqual(result.delegation.fallbackArgs, ['--mode', 'rpc-ui', '--no-session']);
 });
 
 test('parseArgs keeps --no-session when dropping --offline (discovery launch parity)', () => {

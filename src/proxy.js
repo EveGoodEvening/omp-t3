@@ -4,7 +4,8 @@ const readline = require('node:readline');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const os = require('node:os');
-const { SettlementTracker } = require('./settlement.js');
+const { SettlementTracker, outputRecords } = require('./settlement.js');
+const { StopController, FRAME_BYTES } = require('./queue.js');
 const { HoldOpenTracker } = require('./notices.js');
 const { ModelCatalogManager } = require('./model_catalog.js');
 const { SubagentBridge } = require('./subagent.js');
@@ -19,6 +20,9 @@ const pkg = require('../package.json');
  * Creates the bidirectional stdio proxy pipeline.
  */
 function createProxyPipeline(options) {
+  if (typeof options.onFatalStop !== 'function') {
+    throw new TypeError('Proxy pipeline requires an actual process owner (onFatalStop)');
+  }
 
   const {
     clientIn,
@@ -35,12 +39,74 @@ function createProxyPipeline(options) {
   let rlClient = null;
   let rlChild = null;
   let subagentSubscriptionSent = false;
-  doctor.onSynth = (line) => clientOut.write(line);
-  doctor.onNotice = (line) => clientOut.write(line);
-  // Feature 002 FR4: hold-open notices. The tracker writes notify frames to
-  // the consumer while the run is kept open for pending async work; the
-  // subagent bridge supplies the only count the bridge can state honestly.
-  const holdOpen = new HoldOpenTracker((line) => clientOut.write(line));
+  let stopped = false;
+  let transportFailed = false;
+  let awaitingPromptEvidence = false;
+  const transportFailure = (reason) => {
+    if (stopped || transportFailed || stopController.fatal) return;
+    if (stopController.transaction) stopController.fail(reason);
+    else {
+      transportFailed = true;
+      console.error(`[omp-t3] ${reason}`);
+      // The same direct-process owner handles ordinary transport loss, without
+      // inventing Stop replies. Signal before retiring readers or closing pipes.
+      options.onFatalStop(reason);
+      clientIn.pause();
+      stop();
+    }
+  };
+  const rawEmit = (line, completed) => {
+    if (stopped) return false;
+    try {
+      if (clientOut.destroyed || clientOut.closed || clientOut.writableEnded) throw Error('client output closed');
+      if ((stopController.transaction || stopController.fatal) &&
+          (clientOut.writableLength || 0) + Buffer.byteLength(line) > FRAME_BYTES) {
+        if (!stopController.fatal) stopController.fail('client output admission overflow');
+        return false;
+      }
+      if (!clientOut.write(line, completed)) {
+        if (stopController.transaction) stopController.fail('client output backpressure');
+        return false;
+      }
+      return true;
+    } catch (error) { transportFailure(`client output write failed: ${error.message}`); return false; }
+  };
+  const writeChild = (line) => {
+    if (stopped || stopController.fatal) return;
+    try {
+      if (childIn.destroyed || childIn.writableEnded) throw Error('OMP stdin closed');
+      if (stopController.transaction && (childIn.writableLength || 0) + Buffer.byteLength(line) > FRAME_BYTES) {
+        stopController.fail('OMP stdin admission overflow');
+        return;
+      }
+      if (!childIn.write(line) && stopController.transaction) stopController.fail('OMP stdin backpressure');
+    } catch (error) { transportFailure(`OMP write failed: ${error.message}`); }
+  };
+  const stopController = new StopController({
+    emit: rawEmit,
+    write: writeChild,
+    owner: (reason) => {
+      doctor.stop();
+      // Retire admission before best-effort finite Stop diagnostics. Already
+      // queued readline callbacks are also guarded by the fatal latch.
+      options.onFatalStop(reason);
+      clientIn.pause();
+      rlClient?.close();
+    },
+    clock: options.clock,
+    abort: () => {
+      const result = settlementTracker.handleUpstreamFrame('{"type":"abort"}');
+      if (result?.emit) emit(result.emit);
+    },
+    onTerminal: () => { doctor.stop(); doctor.noteSettled(); holdOpen.clear(); }
+  });
+  const emit = (batch) => {
+    for (const record of outputRecords(batch)) stopController.output(record);
+  };
+  doctor.onSynth = emit;
+  doctor.onNotice = emit;
+  const holdOpen = new HoldOpenTracker(emit);
+  settlementTracker.abortPending = () => !!(stopController.transaction && !stopController.transaction.releasing) || stopController.abortedTerminalPending;
   settlementTracker.pendingSubagents = () => subagentBridge.pendingCount();
   settlementTracker.onHoldOpen = (info) => {
     holdOpen.tick(info);
@@ -54,8 +120,8 @@ function createProxyPipeline(options) {
   // window in which the cards can reach their terminal state.
   settlementTracker.onAbort = () => {
     const sweep = subagentBridge.abortSweep();
-    for (const line of sweep.toClient) clientOut.write(line);
-    for (const line of sweep.toOmp) childIn.write(line);
+    for (const line of sweep.toClient) emit(line);
+    for (const line of sweep.toOmp) writeChild(line);
   };
   // Post-abort cancellation window: children that surface AFTER the sweep
   // are cancelled the moment the bridge observes them (direct omp write).
@@ -63,15 +129,15 @@ function createProxyPipeline(options) {
   // so a late window-cancel can never kill the shim.
   if (typeof childIn.on === 'function') {
     childIn.on('error', (err) => {
-      console.error(`[omp-t3] omp stdin write failed (window cancel or late frame): ${err.message}`);
+      transportFailure(`OMP stdin error: ${err.message}`);
     });
   }
-  subagentBridge.onOmpLine = (line) => childIn.write(line);
+  subagentBridge.onOmpLine = writeChild;
   // Reconciliation against omp's authoritative live child list
   // (get_subagents): heals missed events and refreshes card details.
   const requestSubagentRefresh = () => {
     const line = subagentBridge.refreshRequest();
-    if (line) childIn.write(line);
+    if (line) writeChild(line);
   };
   function start() {
     rlClient = readline.createInterface({
@@ -85,18 +151,29 @@ function createProxyPipeline(options) {
       crlfDelay: Infinity,
       terminal: false
     });
+    rlClient.on('error', (error) => transportFailure(`client input error: ${error.message}`));
+    rlChild.on('error', (error) => transportFailure(`OMP stdout error: ${error.message}`));
 
     // Upstream stream: Client (T3 Code) -> Translator -> OMP
     rlClient.on('line', (line) => {
       const trimmed = line.trim();
       if (!trimmed) return;
+      if (stopped || stopController.fatal) return;
+      let request;
+      try { request = JSON.parse(trimmed); } catch { request = null; }
+      const hadStop = !!stopController.transaction || stopController.suppressTerminal || stopController.abortedTerminalPending;
+      if (request && stopController.upstream(request)) return;
+      if (request?.type === 'prompt' || request?.type === 'abort_and_prompt') {
+        doctor.stop();
+        awaitingPromptEvidence = hadStop;
+      }
 
       // 1. Notify settlement tracker of incoming turn commands; a manual
       //    compact request also synthesizes a downstream compaction_start
       //    (omp's manual compact emits no compaction events of its own).
       const upstreamResult = settlementTracker.handleUpstreamFrame(trimmed);
       if (upstreamResult && upstreamResult.emit) {
-        clientOut.write(upstreamResult.emit);
+        emit(upstreamResult.emit);
       }
       // A plain prompt starts a fresh turn: disarm the post-abort
       // cancellation window (children spawned for THIS prompt are
@@ -127,8 +204,8 @@ function createProxyPipeline(options) {
         }
         commandBridge.answerGetCommands(
           reqId,
-          (refreshLine) => childIn.write(refreshLine),
-          (answer) => clientOut.write(answer)
+          writeChild,
+          emit
         );
         return;
       }
@@ -145,7 +222,7 @@ function createProxyPipeline(options) {
             }
             if (cleanId !== parsed.modelId) {
               parsed.modelId = cleanId;
-              childIn.write(JSON.stringify(parsed) + '\n');
+              writeChild(JSON.stringify(parsed) + '\n');
               return;
             }
           }
@@ -155,23 +232,44 @@ function createProxyPipeline(options) {
       }
 
       // 5. Byte-preserving transparent passthrough
-      childIn.write(line + '\n');
+      writeChild(line + '\n');
     });
 
     // Downstream stream: OMP -> Translator -> Client (T3 Code)
     rlChild.on('line', (line) => {
       const trimmed = line.trim();
+      if (stopped || stopController.fatal) return;
+      let frame;
+      try { frame = JSON.parse(trimmed); } catch { frame = null; }
+      if (frame && stopController.internal(frame, line)) return;
+      // RPC waiter destination wins over response command, including commands
+      // recognized by other adapters. Preserve command/ID/outcome verbatim.
+      if (frame?.type === 'response' && stopController.stateRequests.has(frame.id)) {
+        const projected = settlementTracker.projectStateResponse(frame);
+        emit(projected || line + '\n');
+        return;
+      }
+      // Untagged old settlement cannot complete a newly admitted prompt before
+      // that prompt has produced any turn evidence. Do not reset Stop ownership
+      // on unsolicited agent_start while restoring.
+      if (awaitingPromptEvidence && (frame?.type === 'session_settled' || frame?.type === 'agent_settled' || frame?.type === 'agent_end')) return;
+      if (frame?.type === 'agent_start' || frame?.type === 'prompt_result' ||
+          (frame?.type === 'response' && frame.command === 'prompt')) awaitingPromptEvidence = false;
+      if (frame?.type === 'agent_start' && !stopController.transaction && !stopController.abortedTerminalPending) {
+        stopController.suppressTerminal = false;
+      }
       // Catalogs come only from this running session, never a CLI/cache substitute.
       const modelResult = modelManager.handleDownstreamFrame(line);
       if (modelResult.handled) {
-        clientOut.write(modelResult.line);
+        if (modelResult.fatal) transportFailure(modelResult.fatal);
+        else emit(modelResult.line);
         return;
       }
       // 0. On the child's ready frame, opt into subagent frame forwarding so
       //    the bridge can enrich T3's subagent cards with live status/text.
       if (!subagentSubscriptionSent && trimmed.includes('"type":"ready"')) {
         subagentSubscriptionSent = true;
-        childIn.write(JSON.stringify({ type: 'set_subagent_subscription', level: 'events' }) + '\n');
+        writeChild(JSON.stringify({ type: 'set_subagent_subscription', level: 'events' }) + '\n');
       }
 
       // 0.2 The subscription confirmation means omp's subagent event bus is
@@ -192,12 +290,7 @@ function createProxyPipeline(options) {
       const settleResult = settlementTracker.handleDownstreamFrame(trimmed);
       if (settleResult.handled) {
         if (!settleResult.suppress && settleResult.emit) {
-          clientOut.write(settleResult.emit);
-          if (settleResult.emit.includes('"agent_settled"')) {
-            doctor.noteSettled();
-            // The run finalized: the next hold interval starts fresh.
-            holdOpen.clear();
-          }
+          emit(settleResult.emit);
         }
         return;
       }
@@ -207,7 +300,7 @@ function createProxyPipeline(options) {
       const cmdResult = commandBridge.handleDownstreamFrame(trimmed);
       if (cmdResult.handled) {
         if (cmdResult.emit) {
-          clientOut.write(cmdResult.emit);
+          emit(cmdResult.emit);
         }
         return;
       }
@@ -218,7 +311,7 @@ function createProxyPipeline(options) {
         try {
           const bridgeResp = subagentBridge.handleBridgeResponse(JSON.parse(trimmed));
           if (bridgeResp.handled) {
-            if (bridgeResp.emit) clientOut.write(bridgeResp.emit);
+            if (bridgeResp.emit) emit(bridgeResp.emit);
             return;
           }
         } catch {
@@ -227,7 +320,7 @@ function createProxyPipeline(options) {
       }
       const subResult = subagentBridge.handleDownstreamFrame(trimmed);
       if (subResult.handled) {
-        if (subResult.line) clientOut.write(subResult.line);
+        if (subResult.line) emit(subResult.line);
         // A new task tool call opened, or an ambiguous child update was
         // withheld (FR14): reconcile against omp's authoritative snapshot —
         // it carries explicit parents and can attribute the withheld child.
@@ -236,11 +329,24 @@ function createProxyPipeline(options) {
       }
 
       // 4. Byte-preserving transparent passthrough (diffs, streaming tokens, dialogs, usage)
-      clientOut.write(line + '\n');
+      emit(line + '\n');
     });
+    rlChild.on('close', () => {
+      if (!stopped && stopController.transaction) stopController.fail('OMP stdout EOF');
+    });
+    rlClient.on('close', () => {
+      if (!stopped && stopController.transaction) stopController.fail('client input EOF during Stop');
+    });
+    clientIn.on('error', (error) => transportFailure(`client input error: ${error.message}`));
+    childOut.on('error', (error) => transportFailure(`OMP stdout error: ${error.message}`));
+    clientOut.on('error', (error) => transportFailure(`client output error: ${error.message}`));
+    clientOut.on('close', () => transportFailure('client output closed'));
   }
 
   function stop() {
+    if (stopped) return;
+    stopController.dispose();
+    stopped = true;
     if (rlClient) rlClient.close();
     if (rlChild) rlChild.close();
     doctor.stop();
@@ -253,14 +359,35 @@ function createProxyPipeline(options) {
     settlementTracker,
     modelManager,
     subagentBridge,
-    commandBridge
+    commandBridge,
+    stopController
   };
+}
+
+// Ownership is deliberately the direct child, never an inherited process group.
+// Waiting for `close` is unsafe: descendants can retain stdout indefinitely.
+function createProviderOwner(child, { finish, diagnose = console.error, clock = globalThis }) {
+  let failed = false;
+  let exited = child.exitCode !== null || child.signalCode !== null;
+  child.on('exit', () => { exited = true; });
+  const fail = (reason) => {
+    if (failed) return;
+    failed = true;
+    try { child.kill('SIGKILL'); } catch (error) { diagnose(`[omp-t3] owned kill failed: ${error.message}`); }
+    clock.setTimeout(() => {
+      diagnose(`[omp-t3] ${reason}; ${exited ? 'owned OMP exit observed' : 'termination unconfirmed'}`);
+      child.stdin?.destroy();
+      child.stdout?.destroy();
+      finish(1);
+    }, 250);
+  };
+  return { fail, get failed() { return failed; }, get exited() { return exited; } };
 }
 
 /**
  * Spawns OMP child process and starts proxying standard I/O.
  * @param {string[]} ompArgs Arguments to pass to omp
- * @param {{ t3ExtensionPath?: string }} [options] When the launched T3
+ * @param {{ t3ExtensionPath?: string, requiredHook?: { file: string, identity: string } }} [options] When the launched T3
  *   extension is the shim-managed adapted copy, its path replaces the
  *   incoming T3_PI_MCP_EXTENSION_PATH so the extension's own tool-ownership
  *   identity check keeps matching the file omp actually loaded.
@@ -280,21 +407,55 @@ function spawnAndProxy(ompArgs, options = {}) {
   if (options.t3ExtensionPath) {
     childEnv.T3_PI_MCP_EXTENSION_PATH = options.t3ExtensionPath;
   }
+  // Required generated-hook registration is acknowledged by this child only.
+  // Do not admit client RPC or forward readiness before the guard exists.
+  // Clean private-channel cutover: cached old hooks must not consume fd 3.
+  delete childEnv.OMPT3_REQUIRED_HOOK_FD;
+  delete childEnv.OMPT3_HOOK_REGISTRATION;
+  if (options.requiredHook) childEnv.OMPT3_HOOK_REGISTRATION = options.requiredHook.identity;
   const child = spawn(ompPath, ompArgs, {
-    stdio: ['pipe', 'pipe', 'inherit'],
+    stdio: options.requiredHook ? ['pipe', 'pipe', 'inherit', 'pipe'] : ['pipe', 'pipe', 'inherit'],
     env: childEnv
   });
+  const owner = createProviderOwner(child, { finish: (code) => process.exit(code) });
 
   const pipeline = createProxyPipeline({
     clientIn: process.stdin,
     clientOut: process.stdout,
     childIn: child.stdin,
     childOut: child.stdout,
-    doctor
+    doctor,
+    onFatalStop: owner.fail
   });
   doctor.init(ompPath);
 
-  pipeline.start();
+  let hookTimer;
+  let hookRegistered = false;
+  if (options.requiredHook) {
+    const ack = child.stdio[3];
+    const expected = JSON.stringify({ contract: options.requiredHook.identity }) + '\n';
+    let received = '';
+    hookTimer = setTimeout(() => {
+      owner.fail('Launch refused: required hook did not acknowledge registration');
+    }, 10000);
+    ack.on('data', chunk => {
+      if (hookRegistered || owner.failed) return; // Drain duplicate acknowledgements.
+      received += chunk.toString();
+      if (received.startsWith(expected)) {
+        clearTimeout(hookTimer);
+        hookRegistered = true;
+        received = '';
+        pipeline.start();
+      } else if (!expected.startsWith(received)) {
+        owner.fail('Launch refused: invalid required-hook acknowledgement');
+      }
+    });
+    ack.on('error', error => owner.fail(`Launch refused: required hook channel: ${error.message}`));
+    // Exit does not cancel registration ownership: buffered ack bytes may still
+    // arrive, and descendant-held pipes must not remove the ten-second bound.
+  } else {
+    pipeline.start();
+  }
 
   // Propagate termination signals to child process
   const forwardSignal = (sig) => {
@@ -307,27 +468,41 @@ function spawnAndProxy(ompArgs, options = {}) {
     }
   };
 
-  process.on('SIGINT', () => forwardSignal('SIGINT'));
-  process.on('SIGTERM', () => forwardSignal('SIGTERM'));
-  process.on('SIGHUP', () => forwardSignal('SIGHUP'));
+  const signalHandlers = new Map(['SIGINT', 'SIGTERM', 'SIGHUP'].map(sig => [sig, () => forwardSignal(sig)]));
+  for (const [sig, handler] of signalHandlers) process.on(sig, handler);
 
   // Clean shutdown when child process exits
-  child.on('close', (code, signal) => {
+  const finishChild = (code, signal) => {
+    if (options.requiredHook && !hookRegistered) {
+      owner.fail('Launch refused: required hook never registered');
+    }
+    if (owner.failed) return;
     pipeline.stop();
+    for (const [sig, handler] of signalHandlers) process.removeListener(sig, handler);
     if (signal) {
       process.kill(process.pid, signal);
     } else {
       process.exit(code ?? 0);
     }
+  };
+  child.on('close', (code, signal) => {
+    // A final acknowledgement may be queued behind exit/close delivery.
+    // Keep the original deadline; one turn is not a new registration grace.
+    if (options.requiredHook && !hookRegistered) setImmediate(() => finishChild(code, signal));
+    else finishChild(code, signal);
+  });
+  child.on('exit', () => {
+    if (pipeline.stopController.transaction && !owner.failed) pipeline.stopController.fail('owned OMP exited during Stop');
   });
 
   child.on('error', (err) => {
-    console.error(`[omp-t3] Failed to spawn omp child process (${ompPath}):`, err);
-    process.exit(1);
+    if (pipeline.stopController.transaction) pipeline.stopController.fail(`OMP process error: ${err.message}`);
+    else { owner.fail(`OMP process error: ${err.message}`); pipeline.stop(); }
   });
 }
 
 module.exports = {
   createProxyPipeline,
-  spawnAndProxy
+  spawnAndProxy,
+  createProviderOwner
 };

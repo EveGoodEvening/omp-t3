@@ -19,6 +19,7 @@ function pipeline(t) {
   const child = collectLines(childIn);
   const proxy = createProxyPipeline({
     clientIn, clientOut, childIn, childOut,
+    onFatalStop() { childIn.destroy(); childOut.destroy(); },
     doctor: { observeDownstream() {}, noteSettled() {}, stop() {} }
   });
   proxy.start();
@@ -160,6 +161,67 @@ test('final UTF-8 frame boundary includes LF, escaping, multibyte content and du
       assert.ok(Buffer.byteLength(line) < 1024);
       assert.equal(Object.hasOwn(parsed, 'models'), false);
       assert.equal(Object.hasOwn(parsed, 'data'), false);
+    }
+  }
+});
+
+test('long correlated failures include escaped UTF-8 IDs and LF in the budget', t => {
+  const manager = new ModelCatalogManager();
+  const limit = 1048576;
+  for (const prefix of ['', '界😀"\\\n']) for (const target of [limit - 1, limit]) {
+    const frame = response([{id:'m'}], {id:prefix});
+    frame.id += 'i'.repeat(target - Buffer.byteLength(JSON.stringify(frame) + '\n'));
+    const p = pipeline(t);
+    p.reply(frame);
+    const line = p.client.lines.at(-1) + '\n';
+    assert(Buffer.byteLength(line) <= limit);
+    const error = JSON.parse(line);
+    assert.equal(error.success, false);
+    assert.equal(error.id, frame.id);
+    assert.equal(Object.hasOwn(error,'models'), false);
+  }
+  for (const id of [undefined, null, 7, '', '界"\\']) {
+    const frame = id === undefined ? {} : {id};
+    const line = manager.errorResponse(frame, '界"\\\n'.repeat(limit));
+    assert(Buffer.byteLength(line) <= limit);
+    const error = JSON.parse(line);
+    assert.equal(Object.hasOwn(error,'id'), id !== undefined);
+    if (id !== undefined) assert.equal(error.id,id);
+  }
+});
+
+test('unrepresentable correlated failure hands off transport without output or later admission', t => {
+  const {stdin:clientIn,stdout:clientOut} = createMockStreams();
+  const {stdin:childIn,stdout:childOut} = createMockStreams();
+  const client = collectLines(clientOut), child = collectLines(childIn), failures = [];
+  const proxy = createProxyPipeline({clientIn,clientOut,childIn,childOut,
+    onFatalStop: reason => failures.push(reason),
+    doctor:{observeDownstream(){},stop(){},noteSettled(){}}});
+  proxy.start(); t.after(()=>proxy.stop());
+  const frame = {type:'response',command:'get_available_models',success:true,id:''};
+  frame.id = '界"\\\n' + 'i'.repeat(1048576 - Buffer.byteLength(JSON.stringify({...frame,id:'界"\\\n'})+'\n'));
+  assert.equal(Buffer.byteLength(JSON.stringify(frame)+'\n'),1048576);
+  childOut.write(JSON.stringify(frame)+'\n');
+  clientIn.write('{"type":"get_state","id":"later"}\n');
+  assert.equal(failures.length,1);
+  assert.match(failures[0], /correlated error exceeds/);
+  assert.deepEqual(client.lines,[]);
+  assert.deepEqual(child.lines,[]);
+});
+
+test('minimal correlated envelope exact boundary preserves ID or explicitly fails transport', t => {
+  const manager = new ModelCatalogManager(), limit = 1048576;
+  for (const target of [limit - 1, limit, limit + 1]) {
+    const frame = {type:'response',command:'get_available_models',success:false,id:'界"\\\n'};
+    frame.id += 'i'.repeat(target - Buffer.byteLength(JSON.stringify(frame)+'\n'));
+    const line = manager.errorResponse(frame, 'diagnostic');
+    if (target > limit) assert.equal(line,null);
+    else {
+      assert.equal(Buffer.byteLength(line),target);
+      assert.deepEqual(JSON.parse(line),frame);
+      const p = pipeline(t);
+      p.reply({...frame,success:true});
+      assert.deepEqual(p.client.getJson(),[frame]);
     }
   }
 });

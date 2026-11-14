@@ -113,7 +113,10 @@ class ContractDoctor {
         if (parsed.type === 'prompt_result' && parsed.agentInvoked === true && parsed.sessionSettled === true) {
           this.pendingSettle = { status: parsed.status || 'completed' };
           clearTimeout(this.settleTimer);
-          this.settleTimer = setTimeout(() => this.onSettleWatchdog(), this.watchdogMs);
+          const pending = this.pendingSettle;
+          this.settleTimer = setTimeout(() => {
+            if (this.pendingSettle === pending) this.onSettleWatchdog();
+          }, this.watchdogMs);
         }
       } catch {
         // Ignore parse failures here; settlement.js owns the frame
@@ -234,6 +237,7 @@ class ContractDoctor {
   stop() {
     clearTimeout(this.settleTimer);
     this.settleTimer = null;
+    this.pendingSettle = null;
   }
 }
 

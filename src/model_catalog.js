@@ -57,7 +57,16 @@ class ModelCatalogManager {
   errorResponse(response, message) {
     const error = { type: 'response', command: 'get_available_models', success: false, error: message };
     if (Object.hasOwn(response, 'id')) error.id = response.id;
-    return JSON.stringify(error) + '\n';
+    for (const detail of [message, 'Catalog error', '']) {
+      error.error = detail;
+      const line = JSON.stringify(error) + '\n';
+      if (Buffer.byteLength(line, 'utf8') <= MAX_FRAME_BYTES) return line;
+    }
+    // success:false itself is a failure; optional detail must not cost correlation.
+    delete error.error;
+    const minimal = JSON.stringify(error) + '\n';
+    if (Buffer.byteLength(minimal, 'utf8') <= MAX_FRAME_BYTES) return minimal;
+    return null; // Even the minimal correlated failure cannot be represented.
   }
 
   // Throws on oversize so diagnostics cannot mistake an error frame for success.
@@ -88,7 +97,10 @@ class ModelCatalogManager {
       }
       return { handled: true, line: this.serializeModels(frame, this.pruneModels(frame.data.models)) };
     } catch (err) {
-      return { handled: true, line: this.errorResponse(frame, err.message) };
+      const errorLine = this.errorResponse(frame, err.message);
+      return errorLine === null
+        ? { handled: true, fatal: 'Model catalog correlated error exceeds 1048576 UTF-8 bytes' }
+        : { handled: true, line: errorLine };
     }
   }
 }

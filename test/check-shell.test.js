@@ -64,6 +64,7 @@ test('standalone discovery cannot reuse a previous success or legacy cache', { s
     const lines = collectLines(clientOut);
     const pipeline = createProxyPipeline({
       clientIn, clientOut, childIn, childOut,
+      onFatalStop() { childIn.destroy(); childOut.destroy(); },
       doctor: { observeDownstream() {}, stop() {} }
     });
     pipeline.start();

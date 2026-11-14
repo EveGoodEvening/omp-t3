@@ -240,12 +240,10 @@ test('policy hook extension checks the filled model, not the omitted one', t => 
     else process.env.XDG_CACHE_HOME = previous;
   });
   const env = { OMPT3_SUBAGENT_ALLOWED_MODELS: 'swe-2-flash' };
-  const args = subagentPolicyArgs(createSubagentPolicy(env));
-  const source = fs.readFileSync(args[1], 'utf8');
+  const { args } = subagentPolicyArgs(createSubagentPolicy(env));
   for (const [settings, blocked] of [[fakeSettings(userConfig), false], [undefined, true]]) {
-    let hook;
-    const pi = { pi: { settings }, on: (name, fn) => { assert.equal(name, 'tool_call'); hook = fn; } };
-    vm.runInNewContext(source.replace('export default function', 'function') + '\nompT3SubagentPolicy(pi);', { process: { env }, pi });
+    const handlers = require('./generated-hook.js').loadHook(args[1], env, { pi: { settings } });
+    const hook = handlers.get('tool_call');
     const input = { task: 'x' };
     const result = hook({ toolName: 'mcp__t3-code__delegate_task', input });
     if (blocked) assert.match(result.reason, /target.model/);

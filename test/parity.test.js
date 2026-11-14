@@ -15,7 +15,9 @@ function linesByType(collected, type) {
 function startPipeline() {
   const { stdin: clientIn, stdout: clientOut } = createMockStreams();
   const { stdin: childIn, stdout: childOut } = createMockStreams();
-  const pipeline = createProxyPipeline({ clientIn, clientOut, childIn, childOut });
+  const pipeline = createProxyPipeline({ clientIn, clientOut, childIn, childOut,
+    doctor: { observeDownstream() {}, noteSettled() {}, stop() {} },
+    onFatalStop() { childIn.destroy(); childOut.destroy(); } });
   const client = collectLines(clientOut);
   const toChild = collectLines(childIn);
   pipeline.start();

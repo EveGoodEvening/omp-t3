@@ -10,6 +10,8 @@ test('Proxy pipeline passes through turn_end with usage metrics byte-for-byte', 
   const { stdin: childIn, stdout: childOut } = createMockStreams();
 
   const pipeline = createProxyPipeline({
+    doctor: { observeDownstream() {}, noteSettled() {}, stop() {} },
+    onFatalStop() { childIn.destroy(); childOut.destroy(); },
     clientIn,
     clientOut,
     childIn,
